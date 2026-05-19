@@ -9,3 +9,5 @@ axum-server = { version = "0.7", features = ["tls-rustls"] }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 tower-http = { version = "0.5", features = ["cors"] }
+dotenv = "0.15.0"
+sqlx = {version = "0.8.6", features = ["sqlite", "runtime-tokio"]}

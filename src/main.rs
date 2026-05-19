@@ -3,9 +3,10 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post},
+    routing::{delete, get, post, put},
 };
 use axum_server::tls_rustls::RustlsConfig;
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -39,11 +40,14 @@ type AppState = Arc<Mutex<Vec<Ticket>>>;
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     let state: AppState = Arc::new(Mutex::new(vec![]));
 
     let app = Router::new()
         .route("/tickets", get(get_tickets))
         .route("/tickets", post(create_ticket))
+        .route("/tickets/:ticket_id", put(edit_ticket))
+        .route("/tickets/:ticket_id", delete(delete_ticket))
         .route("/tickets/:id/comments", post(add_comment))
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive());
@@ -54,17 +58,16 @@ async fn main() {
     //
     // 2. Put the two generated files in the same folder as this binary
 
-    let cert_path = "keys/eyans-macbook-pro.tailcb4684.ts.net.crt";
-    let key_path = "keys/eyans-macbook-pro.tailcb4684.ts.net.key";
+    let cert_path = dotenv::var("TAILSCALE_CERT_PATH").unwrap();
+    let key_path = dotenv::var("TAILSCALE_KEY_PATH").unwrap();
 
     println!("🔒 Loading Tailscale certificates...");
     let tls_config = RustlsConfig::from_pem_file(cert_path, key_path)
         .await
         .expect("Failed to load certificates. Make sure cert files exist!");
 
-    let addr = "100.104.203.56:3000";
+    let addr = dotenv::var("SERVER_IP").unwrap();
     println!("🚀 HTTPS Server running on https://{}", addr);
-    println!("📱 Use in Swift: https://your-machine.tailnet.ts.net:3000");
 
     axum_server::bind_rustls(addr.parse().unwrap(), tls_config)
         .serve(app.into_make_service())
@@ -91,6 +94,18 @@ async fn create_ticket(
     };
     tickets.push(new_ticket.clone());
     Json(new_ticket)
+}
+
+async fn edit_ticket(State(state): State<AppState>, Json(payload): Json<TicketCreate>)
+// -> Json<Ticket> {
+{
+    println!("editing ticket name or description");
+}
+
+async fn delete_ticket(State(state): State<AppState>, Json(payload): Json<TicketCreate>)
+// -> Json<Ticket> {
+{
+    println!("deleting ticket name or description");
 }
 
 async fn add_comment(
