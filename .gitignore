@@ -4,3 +4,4 @@ keys/
 
 ./Cargo.lock
 .env
+tickets.db

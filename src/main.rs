@@ -1,3 +1,6 @@
+mod db;
+mod tickets;
+
 use axum::{
     Router,
     extract::{Path, State},
@@ -8,20 +11,14 @@ use axum::{
 use axum_server::tls_rustls::RustlsConfig;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use std::sync::Arc;
+use tickets::Ticket;
 use tokio::sync::Mutex;
 
-#[derive(Clone, Serialize, Deserialize)]
-struct Ticket {
-    id: u32,
-    name: String,
-    description: String,
-    comments: Vec<Comment>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, sqlx::FromRow, Serialize, Deserialize)]
 struct Comment {
-    id: u32,
+    id: i64,
     text: String,
 }
 
@@ -41,15 +38,19 @@ type AppState = Arc<Mutex<Vec<Ticket>>>;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
+
+    let pool = db::init_db()
+        .await
+        .expect("Err: Unable to initialise data base function.");
     let state: AppState = Arc::new(Mutex::new(vec![]));
 
     let app = Router::new()
-        .route("/tickets", get(get_tickets))
-        .route("/tickets", post(create_ticket))
-        .route("/tickets/:ticket_id", put(edit_ticket))
-        .route("/tickets/:ticket_id", delete(delete_ticket))
-        .route("/tickets/:id/comments", post(add_comment))
-        .with_state(state)
+        .route("/tickets", get(get_all_tickets))
+        //.route("/tickets", post(create_ticket))
+        //.route("/tickets/:ticket_id", put(edit_ticket))
+        //.route("/tickets/:ticket_id", delete(delete_ticket))
+        //.route("/tickets/:id/comments", post(add_comment))
+        .with_state(Arc::new(pool))
         .layer(tower_http::cors::CorsLayer::permissive());
 
     // ================== HTTPS SETUP ==================
@@ -76,52 +77,50 @@ async fn main() {
 }
 
 // ================== Handlers (same as before) ==================
-async fn get_tickets(State(state): State<AppState>) -> Json<Vec<Ticket>> {
-    let tickets = state.lock().await;
-    Json(tickets.clone())
+async fn get_all_tickets(State(pool): State<Arc<SqlitePool>>) -> Json<Vec<Ticket>> {
+    tickets::get_tickets(State(pool)).await
 }
+//async fn create_ticket(
+//    State(pool): State<Arc<SqlitePool>>,
+//    Json(payload): Json<TicketCreate>,
+//) -> Json<Ticket> {
+//    let mut tickets = pool.lock().await;
+//    let new_ticket = Ticket {
+//        id: (tickets.len() as u32) + 1,
+//        name: payload.name,
+//        description: payload.description,
+//        comments: vec![],
+//    };
+//    tickets.push(new_ticket.clone());
+//    Json(new_ticket)
+//}
 
-async fn create_ticket(
-    State(state): State<AppState>,
-    Json(payload): Json<TicketCreate>,
-) -> Json<Ticket> {
-    let mut tickets = state.lock().await;
-    let new_ticket = Ticket {
-        id: (tickets.len() as u32) + 1,
-        name: payload.name,
-        description: payload.description,
-        comments: vec![],
-    };
-    tickets.push(new_ticket.clone());
-    Json(new_ticket)
-}
-
-async fn edit_ticket(State(state): State<AppState>, Json(payload): Json<TicketCreate>)
+//async fn edit_ticket(State(pool): State<Arc<SqlitePool>>, Json(payload): Json<TicketCreate>)
 // -> Json<Ticket> {
-{
-    println!("editing ticket name or description");
-}
+//{
+//    println!("editing ticket name or description");
+//}
 
-async fn delete_ticket(State(state): State<AppState>, Json(payload): Json<TicketCreate>)
+//async fn delete_ticket(State(pool): State<Arc<SqlitePool>, Json(payload): Json<TicketCreate>)
 // -> Json<Ticket> {
-{
-    println!("deleting ticket name or description");
-}
+//{
+//    println!("deleting ticket name or description");
+//}
 
-async fn add_comment(
-    Path(id): Path<u32>,
-    State(state): State<AppState>,
-    Json(payload): Json<CommentCreate>,
-) -> Result<Json<Comment>, StatusCode> {
-    let mut tickets = state.lock().await;
-    if let Some(ticket) = tickets.iter_mut().find(|t| t.id == id) {
-        let new_comment = Comment {
-            id: (ticket.comments.len() as u32) + 1,
-            text: payload.text,
-        };
-        ticket.comments.push(new_comment.clone());
-        Ok(Json(new_comment))
-    } else {
-        Err(StatusCode::NOT_FOUND)
-    }
-}
+//async fn add_comment(
+//    Path(id): Path<u32>,
+//    State(pool): State<Arc<SqlitePool>,
+//    Json(payload): Json<CommentCreate>,
+//) -> Result<Json<Comment>, StatusCode> {
+//    let mut tickets =
+//    if let Some(ticket) = tickets.iter_mut().find(|t| t.id == id) {
+//        let new_comment = Comment {
+//            id: (ticket.comments.len() as u32) + 1,
+//            text: payload.text,
+//        };
+//        ticket.comments.push(new_comment.clone());
+//        Ok(Json(new_comment))
+//    } else {
+//        Err(StatusCode::NOT_FOUND)
+//    }
+//}
