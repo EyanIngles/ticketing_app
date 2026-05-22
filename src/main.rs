@@ -13,19 +13,13 @@ use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use tickets::Ticket;
+use tickets::{Ticket, TicketCreate};
 use tokio::sync::Mutex;
 
 #[derive(Clone, sqlx::FromRow, Serialize, Deserialize)]
 struct Comment {
     id: i64,
     text: String,
-}
-
-#[derive(Deserialize)]
-struct TicketCreate {
-    name: String,
-    description: String,
 }
 
 #[derive(Deserialize)]
@@ -42,11 +36,10 @@ async fn main() {
     let pool = db::init_db()
         .await
         .expect("Err: Unable to initialise data base function.");
-    let state: AppState = Arc::new(Mutex::new(vec![]));
 
     let app = Router::new()
         .route("/tickets", get(get_all_tickets))
-        //.route("/tickets", post(create_ticket))
+        .route("/tickets", post(create_ticket))
         //.route("/tickets/:ticket_id", put(edit_ticket))
         //.route("/tickets/:ticket_id", delete(delete_ticket))
         //.route("/tickets/:id/comments", post(add_comment))
@@ -80,21 +73,14 @@ async fn main() {
 async fn get_all_tickets(State(pool): State<Arc<SqlitePool>>) -> Json<Vec<Ticket>> {
     tickets::get_tickets(State(pool)).await
 }
-//async fn create_ticket(
-//    State(pool): State<Arc<SqlitePool>>,
-//    Json(payload): Json<TicketCreate>,
-//) -> Json<Ticket> {
-//    let mut tickets = pool.lock().await;
-//    let new_ticket = Ticket {
-//        id: (tickets.len() as u32) + 1,
-//        name: payload.name,
-//        description: payload.description,
-//        comments: vec![],
-//    };
-//    tickets.push(new_ticket.clone());
-//    Json(new_ticket)
-//}
 
+async fn create_ticket(
+    State(pool): State<Arc<SqlitePool>>,
+    Json(payload): Json<TicketCreate>,
+) -> Json<Ticket> {
+    //println!("{:?}", Json(payload));
+    tickets::create_ticket(State(pool), Json(payload)).await
+}
 //async fn edit_ticket(State(pool): State<Arc<SqlitePool>>, Json(payload): Json<TicketCreate>)
 // -> Json<Ticket> {
 //{

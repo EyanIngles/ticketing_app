@@ -5,3 +5,6 @@ keys/
 ./Cargo.lock
 .env
 tickets.db
+tickets.db-shm
+tickets.db-wal
+makefile
