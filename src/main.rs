@@ -27,8 +27,6 @@ struct CommentCreate {
     text: String,
 }
 
-type AppState = Arc<Mutex<Vec<Ticket>>>;
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -41,7 +39,7 @@ async fn main() {
         .route("/tickets", get(get_all_tickets))
         .route("/tickets", post(create_ticket))
         //.route("/tickets/:ticket_id", put(edit_ticket))
-        //.route("/tickets/:ticket_id", delete(delete_ticket))
+        .route("/tickets/:ticket_id", delete(delete_ticket))
         //.route("/tickets/:id/comments", post(add_comment))
         .with_state(Arc::new(pool))
         .layer(tower_http::cors::CorsLayer::permissive());
@@ -71,7 +69,8 @@ async fn main() {
 
 // ================== Handlers (same as before) ==================
 async fn get_all_tickets(State(pool): State<Arc<SqlitePool>>) -> Json<Vec<Ticket>> {
-    tickets::get_tickets(State(pool)).await
+    let tickets = tickets::get_tickets(State(pool)).await;
+    Json(tickets)
 }
 
 async fn create_ticket(
@@ -79,7 +78,19 @@ async fn create_ticket(
     Json(payload): Json<TicketCreate>,
 ) -> Json<Ticket> {
     //println!("{:?}", Json(payload));
-    tickets::create_ticket(State(pool), Json(payload)).await
+    let ticket = tickets::create_ticket(State(pool), Json(payload)).await;
+    Json(ticket)
+}
+
+async fn delete_ticket(
+    State(pool): State<Arc<SqlitePool>>,
+    Path(ticket_id): Path<i32>,
+) -> StatusCode {
+    let ticket = tickets::delete_ticket(State(pool), Path(ticket_id)).await;
+    match ticket {
+        true => StatusCode::NO_CONTENT,
+        false => StatusCode::NOT_FOUND,
+    }
 }
 //async fn edit_ticket(State(pool): State<Arc<SqlitePool>>, Json(payload): Json<TicketCreate>)
 // -> Json<Ticket> {
