@@ -32,7 +32,7 @@ async fn main() {
 
     println!("🔧 Running migration...");
 
-    tickets::migrate_db_1(&pool).await;
+    tickets::migrate_db_2(&pool).await;
 
     let app = Router::new()
         .route("/tickets", get(get_all_tickets))
@@ -99,17 +99,16 @@ async fn delete_ticket(
 //}}
 
 async fn add_comment(
-    Path(id): Path<u32>,
+    Path(ticket_id): Path<u32>,
     State(pool): State<Arc<SqlitePool>>,
     Json(payload): Json<CommentCreate>,
 ) -> Result<Json<Comment>, StatusCode> {
     let record = sqlx::query("INSERT INTO comments (ticket_id, text) VALUES ($1, $2) RETURNING id")
-        .bind(id)
+        .bind(ticket_id)
         .bind(&payload.text)
         .fetch_one(&*pool)
         .await
-        .expect("err");
-    println!("1.1");
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let new_comment = Comment {
         id: record.get("id"), // ← This is the fix

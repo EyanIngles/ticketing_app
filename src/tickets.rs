@@ -47,7 +47,7 @@ pub async fn get_tickets(State(pool): State<Arc<SqlitePool>>) -> Vec<Ticket> {
                 .iter()
                 .filter(|c| c.get::<i64, _>("ticket_id") == ticket_id)
                 .map(|c| Comment {
-                    id: ticket_id,
+                    id: c.get("id"),
                     text: c.get("text"),
                 })
                 .collect();
@@ -88,6 +88,26 @@ pub async fn delete_ticket(
     State(pool): State<Arc<SqlitePool>>,
     Path(ticket_id): Path<i32>,
 ) -> bool {
+    println!("Running comment checker here....");
+    let exist = query(
+        "SELECT EXISTS(
+    SELECT 1 FROM comments WHERE ticket_id = ($1)
+)",
+    )
+    .bind(ticket_id.clone())
+    .fetch_one(&*pool)
+    .await;
+
+    let has_comments: bool = match exist {
+        Ok(row) => row.get(0),
+        Err(_) => false,
+    };
+
+    if has_comments {
+        println!("Has comments attached to this ticket....");
+    } else {
+        println!("this ticket has no comments attached...");
+    }
     let query_data = format!("DELETE FROM tickets WHERE id = {:?}", ticket_id.to_string());
     let result = sqlx::query(query_data.as_str()).execute(&*pool).await;
     match result {
@@ -115,7 +135,7 @@ async fn migrate_comments_into_tickets(pool: SqlitePool) -> bool {
             SELECT * FROM pragma_table_info($1)
             )",
     )
-    .bind("comments")
+    .bind("old_comments")
     .fetch_all(&pool)
     .await;
 
@@ -128,16 +148,20 @@ async fn migrate_comments_into_tickets(pool: SqlitePool) -> bool {
     }
 }
 
-pub async fn migrate_db_1(pool: &SqlitePool) {
+pub async fn migrate_db_2(pool: &SqlitePool) {
     if migrate_comments_into_tickets(pool.clone()).await {
         let comment_migration = sqlx::query(
-            "CREATE TABLE comments(
+            "ALTER TABLE comments RENAME old_comments;
+            CREATE TABLE comments(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticket_id INTEGER NOT NULL,
                 text TEXT NOT NULL,
 
                 FOREIGN KEY (ticket_id) REFERENCES tickets(id)
-                )",
+                );
+            INSERT INTO comments (id, ticket_id, text) 
+            SELECT id, ticket_id, text FROM old_comments; 
+            ",
         )
         .execute(pool)
         .await;
