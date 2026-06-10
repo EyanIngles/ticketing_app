@@ -40,6 +40,10 @@ async fn main() {
         //.route("/tickets/:ticket_id", put(edit_ticket))
         .route("/tickets/:ticket_id", delete(delete_ticket))
         .route("/tickets/:ticket_id/comments", post(add_comment))
+        .route(
+            "/tickets/:ticket_id/comments/:comment_id",
+            delete(delete_comment),
+        )
         .with_state(Arc::new(pool))
         .layer(tower_http::cors::CorsLayer::permissive());
 
@@ -116,4 +120,22 @@ async fn add_comment(
     };
 
     Ok(Json(new_comment))
+}
+
+async fn delete_comment(
+    Path((_tickket_id, comment_id)): Path<(i32, i32)>,
+    State(pool): State<Arc<SqlitePool>>,
+) -> StatusCode {
+    println!(
+        "Delete comment function has beenr recieved.. waiting on completion. ..please wait..."
+    );
+    let result = sqlx::query("DELETE FROM comments WHERE id = ($1)")
+        .bind(comment_id)
+        .execute(&*pool)
+        .await;
+
+    match result {
+        Ok(_) => StatusCode::OK,
+        Err(_) => StatusCode::NOT_FOUND,
+    }
 }
