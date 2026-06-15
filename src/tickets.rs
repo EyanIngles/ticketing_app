@@ -1,5 +1,6 @@
 use axum::extract::Path;
 use axum::{extract::State, response::Json};
+use axum_server::bind;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool, query};
 use std::sync::Arc;
@@ -21,6 +22,12 @@ pub struct TicketCreate {
 pub struct Comment {
     pub id: i64,
     pub text: String,
+}
+#[derive(Deserialize, Serialize, Debug)]
+pub struct User {
+    pub id: i32,
+    pub email: String,
+    pub password: String,
 }
 
 pub async fn get_tickets(State(pool): State<Arc<SqlitePool>>) -> Vec<Ticket> {
@@ -84,6 +91,23 @@ pub async fn create_ticket(
     }
 }
 
+pub async fn get_user_details(
+    State(pool): State<Arc<SqlitePool>>,
+    Path(email): Path<String>,
+) -> User {
+    let user = sqlx::query("SELECT * FROM users WHERE email = ($1)")
+        .bind(email.clone())
+        .fetch_one(&*pool)
+        .await
+        .unwrap();
+
+    User {
+        id: user.get("id"),
+        email: user.get("email"),
+        password: user.get("password"),
+    }
+}
+
 pub async fn delete_ticket(
     State(pool): State<Arc<SqlitePool>>,
     Path(ticket_id): Path<i32>,
@@ -128,14 +152,14 @@ pub async fn delete_ticket(
     }
 }
 
-async fn migrate_comments_into_tickets(pool: SqlitePool) -> bool {
+async fn migrate_users_into_tickets(pool: SqlitePool) -> bool {
     let result = sqlx::query(
         "
         SELECT EXISTS (
             SELECT * FROM pragma_table_info($1)
             )",
     )
-    .bind("old_comments")
+    .bind("users")
     .fetch_all(&pool)
     .await;
 
@@ -147,31 +171,30 @@ async fn migrate_comments_into_tickets(pool: SqlitePool) -> bool {
         Err(_) => false,
     }
 }
+async fn migration_down(pool: SqlitePool) {
+    sqlx::query(
+        "DROP TABLE ($1);
+",
+    )
+    .bind("users")
+    .execute(&pool)
+    .await
+    .unwrap();
+}
 
 pub async fn migrate_db_2(pool: &SqlitePool) {
-    if migrate_comments_into_tickets(pool.clone()).await {
-        let comment_migration = sqlx::query(
-            "ALTER TABLE comments RENAME old_comments;
-            CREATE TABLE comments(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticket_id INTEGER NOT NULL,
-                text TEXT NOT NULL,
-
-                FOREIGN KEY (ticket_id) REFERENCES tickets(id)
-                );
-            INSERT INTO comments (id, ticket_id, text) 
-            SELECT id, ticket_id, text FROM old_comments; 
+    if migrate_users_into_tickets(pool.clone()).await {
+        let users_migration = sqlx::query(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, password TEXT NOT NULL);
             ",
         )
-        .execute(pool)
+        .execute(&pool.clone())
         .await;
-
-        match comment_migration {
-            Ok(result) => println!(
-                "successfully migrated database with new comment table {:?}",
-                result
-            ),
-            Err(e) => println!("Err: Unsuccessful migration attempt -> {:?}", e),
+        match users_migration {
+            Ok(_) => println!("successfully migrated db to add users."),
+            Err(_) => {
+                migration_down(pool.clone()).await;
+            }
         }
     } else {
         println!("Migration already completed.");

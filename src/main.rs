@@ -1,8 +1,12 @@
 mod db;
 mod tickets;
 
+use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHasher};
+
 use axum::{
     Router,
+    error_handling::HandleErrorLayer,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
@@ -14,8 +18,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use tickets::{Comment, Ticket, TicketCreate};
-use tokio::sync::Mutex;
+use tickets::{Comment, Ticket, TicketCreate, User};
+
+//use tokio::sync::Mutex;
 
 #[derive(Deserialize, Debug)]
 struct CommentCreate {
@@ -40,12 +45,14 @@ async fn main() {
         //.route("/tickets/:ticket_id", put(edit_ticket))
         .route("/tickets/:ticket_id", delete(delete_ticket))
         .route("/tickets/:ticket_id/comments", post(add_comment))
+        .route("/users/:email", get(fetch_user))
         .route(
             "/tickets/:ticket_id/comments/:comment_id",
             delete(delete_comment),
         )
         .with_state(Arc::new(pool))
         .layer(tower_http::cors::CorsLayer::permissive());
+    //.layer(GovernorLayer::new(*governor_config))
 
     // ================== HTTPS SETUP ==================
     // 1. Run this command first on your server machine:
@@ -74,6 +81,31 @@ async fn main() {
 async fn get_all_tickets(State(pool): State<Arc<SqlitePool>>) -> Json<Vec<Ticket>> {
     let tickets = tickets::get_tickets(State(pool)).await;
     Json(tickets)
+}
+
+async fn _encrypt_password_for_storage(_password: String) -> String {
+    "hi".to_string()
+}
+
+async fn encrypt_password_and_verify(_password: String) -> bool {
+    true
+}
+
+async fn fetch_user(State(pool): State<Arc<SqlitePool>>, Path(email): Path<String>) -> Json<User> {
+    //if true, return the user, if or user doesnt exist, return false boolean.
+    // call function to exists
+    println!("user calling to login in with email {:?}", &email);
+    let original_email = email.clone();
+    let user: User = tickets::get_user_details(State(pool), Path(email)).await;
+    if user.email == original_email {
+        return Json(user);
+    } else {
+        return Json(User {
+            id: 0,
+            email: "".to_string(),
+            password: "".to_string(),
+        });
+    }
 }
 
 async fn create_ticket(
