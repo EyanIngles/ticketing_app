@@ -1,24 +1,24 @@
 mod db;
+mod db_down;
+mod projects;
 mod tickets;
-
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
+use projects::{CreateProject, Project};
 
 use axum::{
     Router,
-    error_handling::HandleErrorLayer,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
     routing::{delete, get, post, put},
 };
+use axum_macros::{debug_handler, debug_middleware};
 use axum_server::tls_rustls::RustlsConfig;
 use dotenv::dotenv;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::Row;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use tickets::{Comment, Ticket, TicketCreate, User};
+use tickets::{Comment, LoginRequest, Ticket, TicketCreate, User};
 
 //use tokio::sync::Mutex;
 
@@ -37,15 +37,17 @@ async fn main() {
 
     println!("🔧 Running migration...");
 
-    tickets::migrate_db_2(&pool).await;
+    tickets::migration_up(&pool).await;
 
     let app = Router::new()
+        .route("/projects", get(fetch_projects))
+        .route("/projects", post(create_project))
         .route("/tickets", get(get_all_tickets))
         .route("/tickets", post(create_ticket))
         //.route("/tickets/:ticket_id", put(edit_ticket))
         .route("/tickets/:ticket_id", delete(delete_ticket))
         .route("/tickets/:ticket_id/comments", post(add_comment))
-        .route("/users/:email", get(fetch_user))
+        .route("/login", post(user_login))
         .route(
             "/tickets/:ticket_id/comments/:comment_id",
             delete(delete_comment),
@@ -83,6 +85,19 @@ async fn get_all_tickets(State(pool): State<Arc<SqlitePool>>) -> Json<Vec<Ticket
     Json(tickets)
 }
 
+async fn fetch_projects(State(pool): State<Arc<SqlitePool>>) -> Json<Vec<Project>> {
+    let projects = projects::fetch_projects(State(pool)).await;
+    Json(projects)
+}
+#[debug_handler]
+async fn create_project(
+    State(pool): State<Arc<SqlitePool>>,
+    Json(payload): Json<CreateProject>,
+) -> StatusCode {
+    let project = projects::create_project(State(pool), Json(payload)).await;
+    project
+}
+
 async fn _encrypt_password_for_storage(_password: String) -> String {
     "hi".to_string()
 }
@@ -91,20 +106,17 @@ async fn encrypt_password_and_verify(_password: String) -> bool {
     true
 }
 
-async fn fetch_user(State(pool): State<Arc<SqlitePool>>, Path(email): Path<String>) -> Json<User> {
+async fn user_login(
+    State(pool): State<Arc<SqlitePool>>,
+    Json(payload): Json<LoginRequest>,
+) -> StatusCode {
     //if true, return the user, if or user doesnt exist, return false boolean.
     // call function to exists
-    println!("user calling to login in with email {:?}", &email);
-    let original_email = email.clone();
-    let user: User = tickets::get_user_details(State(pool), Path(email)).await;
-    if user.email == original_email {
-        return Json(user);
+    let user = tickets::get_user_details(State(pool), Json(payload)).await;
+    if user {
+        return StatusCode::FOUND;
     } else {
-        return Json(User {
-            id: 0,
-            email: "".to_string(),
-            password: "".to_string(),
-        });
+        return StatusCode::NO_CONTENT;
     }
 }
 

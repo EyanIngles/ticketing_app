@@ -12,4 +12,5 @@ tower-http = { version = "0.5", features = ["cors"] }
 dotenv = "0.15.0"
 sqlx = {version = "0.8.6", features = ["sqlite", "runtime-tokio"]}
 argon2 = "0.5.3"
+axum-macros = "0.5.1"
 
