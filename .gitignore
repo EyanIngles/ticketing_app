@@ -8,4 +8,7 @@ tickets.db
 tickets.db-shm
 tickets.db-wal
 makefile
-2
+web_view
+lyra-frontend/target
+rust-frontend/target
+rust-frontend/dist

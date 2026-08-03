@@ -8,9 +8,10 @@ axum = { version = "0.7", features = ["json"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.7.0", features = ["cors", "full"] }
 dotenv = "0.15.0"
 sqlx = {version = "0.8.6", features = ["sqlite", "runtime-tokio"]}
 argon2 = "0.5.3"
 axum-macros = "0.5.1"
+jsonwebtoken = "11.0.0"
 

@@ -1,0 +1,248 @@
+/* --- VARIABLE DEFINITIONS --- */
+:root {
+    /* Gradient Definitions */
+    --primary-gradient: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 50%, #10b981 100%); /* Purple -> Blue -> Green */
+    --dark-bg: #0a0a0f;
+    --card-bg: #161622;
+    --text-main: #ffffff;
+    --text-muted: #a0a0b0;
+    --accent-border: rgba(255, 255, 255, 0.1);
+    --ticket-color: #f97316; /* Orange/Amber stands out well on dark/purple */
+}
+
+/* --- BASE STYLES --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--dark-bg);
+    color: var(--text-main);
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+}
+
+/* --- NAVIGATION --- */
+nav {
+    background: rgba(10, 10, 15, 0.9);
+    backdrop-filter: blur(10px);
+    padding: 1rem 5%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--accent-border);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+    background: var(--primary-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.nav-links {
+    display: flex;
+    list-style: none;
+    gap: 25px;
+}
+
+.nav-links a {
+    text-decoration: none;
+    color: var(--text-main);
+    font-weight: 500;
+    transition: 0.3s;
+    opacity: 0.8;
+}
+
+.nav-links a:hover {
+    opacity: 1;
+    color: #a78bfa; /* Light purple glow on hover */
+}
+
+/* --- HERO SECTION --- */
+.hero {
+    padding: 100px 5%;
+    text-align: center;
+    background: var(--primary-gradient);
+    background-size: 200% 200%;
+    animation: gradientFlow 8s ease infinite; /* Smooth moving gradient */
+}
+
+@keyframes gradientFlow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.hero h1 {
+    font-size: clamp(2rem, 8vw, 4rem);
+    margin-bottom: 1rem;
+    color: white;
+    text-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* --- INFO SECTION --- */
+.info-section {
+    padding: 80px 10%;
+    background: var(--dark-bg);
+}
+
+.info-container {
+    max-width: 800px;
+    margin: 0 auto;
+    border-left: 4px solid #a78bfa; /* Purple accent */
+    padding: 20px 30px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0 15px 15px 0;
+}
+
+/* --- PROJECTS SECTION --- */
+.projects-section {
+    padding: 80px 5%;
+    background: #0d0e17;
+}
+
+.section-title {
+    text-align: center;
+    margin-bottom: 50px;
+    font-size: 2rem;
+    color: white;
+}
+
+.project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.project-card {
+    background: var(--card-bg);
+    padding: 40px;
+    border-radius: 20px;
+    border: 1px solid var(--accent-border);
+    transition: transform 0.3s, border 0.3s;
+}
+
+.project-card:hover {
+    transform: translateY(-10px);
+    border: 1px solid #a78bfa; /* Purple glow on hover */
+}
+
+/* Ticket Badge Styling */
+.ticket-badge {
+    background: var(--ticket-color);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    margin-left: 10px;
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.4);
+}
+
+/* --- LOGIN & FORM ELEMENTS (Restyling your specific inputs) --- */
+#links {
+    width: 400px;
+    text-align: left;
+    font-size: 1.2rem;
+    color: white;
+    display: flex;
+    flex-direction: column;
+}
+
+#links a {
+    border: 1px solid var(--accent-border);
+    padding: 15px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+#links a:hover {
+    background: var(--primary-gradient);
+    border: none;
+    color: white;
+    transform: scale(1.02);
+}
+
+.loginContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    padding: 20px;
+}
+
+.loginUsername, .loginPassword {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--accent-border);
+    background: #1a1b26;
+    color: white;
+    width: 100%;
+}
+
+.loginContainer button {
+    background: var(--primary-gradient);
+    color: #fff;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: opacity 0.3s;
+}
+
+.loginContainer button:hover {
+    opacity: 0.9;
+}
+
+/* --- CHAT BOT BUTTON --- */
+#chat-widget {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: var(--primary-gradient);
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.5rem;
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+    cursor: pointer;
+    z-index: 1000;
+}
+
+/* --- RESPONSIVE --- */
+@media (max-width: 768px) {
+    .nav-links {
+        display: none; /* Standard mobile logic handled by JS toggle */
+        flex-direction: column;
+        position: absolute;
+        top: 70px;
+        left: 0;
+        right: 0;
+        background: #0a0a0f;
+        padding: 20px;
+    }
+
+    .nav-links.active {
+        display: flex;
+    }
+
+    .hamburger {
+        display: block;
+    }
+}

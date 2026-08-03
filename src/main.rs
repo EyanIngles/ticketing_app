@@ -19,7 +19,7 @@ use sqlx::Row;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use tickets::{Comment, LoginRequest, Ticket, TicketCreate, User};
-
+use tower_http::services::ServeFile;
 //use tokio::sync::Mutex;
 
 #[derive(Deserialize, Debug)]
@@ -52,6 +52,9 @@ async fn main() {
             "/tickets/:ticket_id/comments/:comment_id",
             delete(delete_comment),
         )
+        .fallback_service(ServeFile::new(
+            "../lyra-frontend/target/dx/lyra-frontend/release/web/public/index.html",
+        ))
         .with_state(Arc::new(pool))
         .layer(tower_http::cors::CorsLayer::permissive());
     //.layer(GovernorLayer::new(*governor_config))

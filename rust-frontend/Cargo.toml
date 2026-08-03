@@ -1,0 +1,10 @@
+[package]
+name = "rust-frontend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+dioxus = { version = "0.6", features = ["web"] }  # Check latest on crates.io
+gloo-storage = "0.3"   # For localStorage
+web-sys = "0.3.103"
