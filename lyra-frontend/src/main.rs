@@ -1,8 +1,8 @@
 mod pages;
 mod router;
 mod states;
-
-use router::Route;
+mod utils;
+use router::RouteView;
 
 use dioxus::prelude::*;
 
@@ -12,5 +12,5 @@ struct LyraProps {
 }
 
 fn main() {
-    dioxus::launch(|| rsx! { Router::<Route> {} });
+    dioxus::launch(|| rsx! { Router::<RouteView> {} });
 }

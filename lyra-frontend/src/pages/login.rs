@@ -1,64 +1,134 @@
-// this file is a starting view and login dealings but main idea is this is a viewing component.
+use crate::pages::MAIN_CSS;
+use crate::router::RouteView;
 use crate::states::IS_LOGGED_IN;
-
-use crate::Route;
-
 use dioxus::prelude::*;
-static CSS: Asset = asset!("/assets/main.css");
+use gloo_storage::{LocalStorage, Storage};
+use serde::{Deserialize, Serialize};
 
-pub struct LoginTest {
-    pub id: u64,
-    pub username: String,
+#[derive(Serialize, Debug)]
+struct LoginRequest {
+    email: String,
     password: String,
 }
 
-impl LoginTest {
-    fn new(username: String, password: String) -> LoginTest {
-        LoginTest {
-            id: 1,
-            username: username,
-            password: password,
-        }
+#[derive(Debug, Deserialize, Clone)]
+struct _User {
+    email: String,
+}
+
+pub fn _set_jwt(jwt_key: String, bear_token: String) {
+    LocalStorage::set(jwt_key, bear_token).unwrap();
+}
+pub fn _del_jwt(jwt_key: String) {
+    LocalStorage::delete(jwt_key);
+}
+
+pub fn _get_jwt() -> String {
+    LocalStorage::get("JWT").unwrap()
+}
+
+async fn login_attempt(email: String, password: String) -> Result<(), String> {
+    let local_storage = LocalStorage::length();
+    if local_storage == 0 {
+        _set_jwt("JWT".to_string(), "length was set to 0 ".to_string());
+    } else {
+        _del_jwt("JWT".to_string());
+    }
+
+    let client = reqwest::Client::new();
+    let payload = LoginRequest { email, password };
+
+    let response = client
+        .post("https://pi.tailcb4684.ts.net:3000/login")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if response.status() == 302 {
+        Ok(())
+    } else {
+        Err(format!("Login failed with status: {}", response.status()))
     }
 }
 
 #[component]
-pub fn LoginView() -> Element {
+pub fn Login() -> Element {
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
-
+    let mut error = use_signal(|| Option::<String>::None);
     let nav = navigator();
-    rsx! {
-        document::Stylesheet { href: CSS }
 
-        h1 {class: "LoginHeader",
-        "Welcome to Lyra tickets\nPlease Login"}
-        div {class: "loginContainer",
-            input {
-                class: "loginUsername",
-                r#type: "text",
-                placeholder: "Enter Username",
-                value: "{username.read()}",
-                oninput: move |username_entry| username.set(username_entry.value()),
-                disabled: *is_loading.read(),
+    let mut submit = move |_| {
+        let email = username();
+        let pwd = password();
+        if email.trim().is_empty() || pwd.trim().is_empty() {
+            error.set(Some("Enter both username and password.".into()));
+            return;
+        }
+        error.set(None);
+        is_loading.set(true);
+
+        spawn(async move {
+            match login_attempt(email, pwd).await {
+                Ok(_) => {
+                    *IS_LOGGED_IN.write() = true;
+                    is_loading.set(false);
+                    nav.push(RouteView::Home {});
+                }
+                Err(err) => {
+                    error.set(Some(err));
+                    is_loading.set(false);
+                }
             }
-            input {
-                class: "loginPassword",
-                r#type: "text",
-                placeholder: "Enter Password",
-                value: "{password.read()}",
-                oninput: move |pwd| password.set(pwd.value()),
-                disabled: *is_loading.read(),
-            }
-            button {class: "loginButton",
-                onclick: move |_| { info!("{0}", username.read());
-                is_loading.set(true);
-                *IS_LOGGED_IN.write() = true;
-                nav.replace(Route::HomeView {});
-                },
-                disabled: *is_loading.read(),
-                if *is_loading.read() { "Logging in..." } else { "Login" },
+        });
+    };
+
+    rsx! {
+        document::Stylesheet { href: MAIN_CSS }
+        document::Link {
+            rel: "stylesheet",
+            href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap",
+        }
+        div { class: "auth-page",
+            div { class: "login-container",
+                h1 { class: "logo", "LYRA" }
+                p { class: "page-subtitle", "Sign in to open the dashboard" }
+                div { class: "card-base-plain",
+                    form {
+                        class: "login-form",
+                        onsubmit: move |evt| {
+                            evt.prevent_default();
+                            submit(());
+                        },
+                        if let Some(err) = error() {
+                            p { class: "error", "{err}" }
+                        }
+                        input {
+                            class: "input-field",
+                            r#type: "text",
+                            placeholder: "Username or email",
+                            value: "{username}",
+                            oninput: move |e| username.set(e.value()),
+                            disabled: is_loading(),
+                        }
+                        input {
+                            class: "input-field",
+                            r#type: "password",
+                            placeholder: "Password",
+                            value: "{password}",
+                            oninput: move |e| password.set(e.value()),
+                            disabled: is_loading(),
+                        }
+                        button {
+                            class: "btn-primary",
+                            r#type: "submit",
+                            disabled: is_loading(),
+                            if is_loading() { "Signing in…" } else { "Login" }
+                        }
+                    }
+                }
             }
         }
     }
