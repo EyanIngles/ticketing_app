@@ -1,15 +1,24 @@
-use dioxus::prelude::*;
-
 mod chat;
 mod contact;
 mod home;
 mod info;
 mod login;
+mod navbar;
+mod project_detail;
 mod projects;
+mod ticket;
 
-pub use chat::ChatView;
-pub use contact::ContactView;
-pub use home::HomeView;
-pub use info::InfoView;
-pub use login::LoginView;
-pub use projects::ProjectsView;
+pub use chat::Chat;
+pub use contact::Contact;
+pub use home::Home;
+pub use info::Info;
+pub use info::InfoPreview;
+pub use login::Login;
+pub use navbar::Footer;
+pub use navbar::Navbar;
+pub use navbar::MAIN_CSS;
+pub use project_detail::ProjectDetail;
+pub use projects::ProjectPreview;
+pub use projects::Projects;
+pub use projects::Ticket;
+pub use ticket::TicketDetail;

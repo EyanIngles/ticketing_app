@@ -12,3 +12,4 @@ web_view
 lyra-frontend/target
 rust-frontend/target
 rust-frontend/dist
+WORK_PLAN.md
