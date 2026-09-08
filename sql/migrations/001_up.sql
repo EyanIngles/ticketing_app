@@ -1,10 +1,14 @@
+ALTER TABLE system ADD COLUMN "schema_migration_version" TEXT;
+ALTER TABLE system ADD COLUMN "applied_at" TEXT;
+
 ALTER TABLE users ADD COLUMN "username" TEXT;
 ALTER TABLE users ADD COLUMN "type" TEXT;
 ALTER TABLE users ADD COLUMN "role" TEXT;
 ALTER TABLE users ADD COLUMN "name" TEXT;
 ALTER TABLE users ADD COLUMN "default_model" TEXT;
 ALTER TABLE users ADD COLUMN "token_hash" TEXT;
-ALTER TABLE users ADD COLUMN "created_at" TEXT DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE users ADD COLUMN "created_at" TEXT;
+UPDATE users SET "created_at" = datetime('now') WHERE "created_at" IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_uq ON users ("username");
 
 ALTER TABLE tickets ADD COLUMN "status" TEXT DEFAULT 'queued';
@@ -19,10 +23,8 @@ ALTER TABLE comments ADD COLUMN "author_type" TEXT;
 ALTER TABLE comments ADD COLUMN "author_role" TEXT;
 ALTER TABLE comments ADD COLUMN "model" TEXT;
 ALTER TABLE comments ADD COLUMN "format" TEXT DEFAULT 'markdown';
-ALTER TABLE comments ADD COLUMN "created_at" TEXT DEFAULT CURRENT_TIMESTAMP;
-
-ALTER TABLE system ADD COLUMN "schema_migration_version" TEXT;
-ALTER TABLE system ADD COLUMN "applied_at" TEXT;
+ALTER TABLE comments ADD COLUMN "created_at" TEXT;
+UPDATE comments SET "created_at" = datetime('now') WHERE "created_at" IS NULL;
 
 UPDATE system
 SET "schema_migration_version" = '001',
