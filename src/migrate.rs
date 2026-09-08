@@ -16,14 +16,14 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         }
 
         println!("applying migration {version}…");
-        match exec_sql(pool, up_sql).await {
+        match exec_sql(pool, up_sql, true).await {
             Ok(()) => {
                 println!("migration {version} applied");
             }
             Err(err) => {
                 eprintln!("migration {version} failed: {err}");
                 eprintln!("rolling back {version}…");
-                if let Err(down_err) = exec_sql(pool, down_sql).await {
+                if let Err(down_err) = exec_sql(pool, down_sql, true).await {
                     eprintln!("rollback {version} failed: {down_err}");
                 } else {
                     eprintln!("migration {version} rolled back");
@@ -44,9 +44,24 @@ async fn current_schema_migration_version(pool: &SqlitePool) -> Option<String> {
         .flatten()
 }
 
-async fn exec_sql(pool: &SqlitePool, sql: &str) -> Result<(), sqlx::Error> {
+fn is_skippable_schema_error(err: &sqlx::Error) -> bool {
+    let msg = err.to_string().to_lowercase();
+    msg.contains("duplicate column") || msg.contains("no such column")
+}
+
+async fn exec_sql(
+    pool: &SqlitePool,
+    sql: &str,
+    skip_schema_conflicts: bool,
+) -> Result<(), sqlx::Error> {
     for statement in split_sql(sql) {
-        sqlx::query(&statement).execute(pool).await?;
+        if let Err(err) = sqlx::query(&statement).execute(pool).await {
+            if skip_schema_conflicts && is_skippable_schema_error(&err) {
+                println!("skipping: {err}");
+                continue;
+            }
+            return Err(err);
+        }
     }
     Ok(())
 }
@@ -100,6 +115,7 @@ mod tests {
             );
             INSERT INTO system (version, date) VALUES ('0.1.0', '12 July 2026');
             "#,
+            false,
         )
         .await
         .unwrap();
@@ -132,25 +148,123 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_up_runs_down() {
+    async fn finishes_after_partial_users_columns() {
         let pool = SqlitePoolOptions::new()
             .connect("sqlite::memory:")
             .await
             .unwrap();
         seed_live_schema(&pool).await;
 
-        let up = "ALTER TABLE tickets ADD COLUMN status TEXT DEFAULT 'queued'; SELECT * FROM missing_table;";
-        let down = "ALTER TABLE tickets DROP COLUMN status;";
+        exec_sql(
+            &pool,
+            r#"
+            ALTER TABLE users ADD COLUMN "username" TEXT;
+            ALTER TABLE users ADD COLUMN "type" TEXT;
+            ALTER TABLE users ADD COLUMN "role" TEXT;
+            ALTER TABLE users ADD COLUMN "name" TEXT;
+            ALTER TABLE users ADD COLUMN "default_model" TEXT;
+            ALTER TABLE users ADD COLUMN "token_hash" TEXT;
+            "#,
+            false,
+        )
+        .await
+        .unwrap();
 
-        assert!(exec_sql(&pool, up).await.is_err());
-        exec_sql(&pool, down).await.unwrap();
+        run_migrations(&pool).await.unwrap();
 
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM pragma_table_info('tickets') WHERE name = 'status'",
+        let version: String = sqlx::query_scalar("SELECT schema_migration_version FROM system")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(version, "001");
+
+        let created_at: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'created_at'",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(count, 0);
+        assert_eq!(created_at, 1);
+    }
+
+    #[tokio::test]
+    async fn down_drops_system_last_after_partial_up() {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        seed_live_schema(&pool).await;
+
+        exec_sql(
+            &pool,
+            r#"
+            ALTER TABLE system ADD COLUMN "schema_migration_version" TEXT;
+            ALTER TABLE system ADD COLUMN "applied_at" TEXT;
+            ALTER TABLE users ADD COLUMN "username" TEXT;
+            "#,
+            false,
+        )
+        .await
+        .unwrap();
+
+        exec_sql(&pool, include_str!("../sql/migrations/001_down.sql"), true)
+            .await
+            .unwrap();
+
+        let username: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'username'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(username, 0);
+
+        let applied_at: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('system') WHERE name = 'applied_at'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(applied_at, 0);
+    }
+
+    #[tokio::test]
+    async fn failed_up_runs_down_without_applied_at() {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        seed_live_schema(&pool).await;
+
+        exec_sql(
+            &pool,
+            r#"
+            ALTER TABLE users ADD COLUMN "username" TEXT;
+            ALTER TABLE users ADD COLUMN "token_hash" TEXT;
+            "#,
+            false,
+        )
+        .await
+        .unwrap();
+
+        exec_sql(&pool, include_str!("../sql/migrations/001_down.sql"), true)
+            .await
+            .unwrap();
+
+        let username: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'username'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(username, 0);
+
+        let applied_at: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('system') WHERE name = 'applied_at'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(applied_at, 0);
     }
 }
