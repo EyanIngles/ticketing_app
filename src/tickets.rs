@@ -1,21 +1,8 @@
-use crate::db_down;
-use argon2::Error;
-
 use axum::extract::Path;
 use axum::{extract::State, response::Json};
-//use axum_server::bind;
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::{SqliteError, SqliteQueryResult};
-use sqlx::{Row, SqlitePool, pool, query};
-use std::ptr::null;
+use sqlx::{Row, SqlitePool, query};
 use std::sync::Arc;
-use std::thread::current;
-
-#[derive(Debug)]
-struct System {
-    version: String,
-    date: String,
-}
 
 #[derive(Clone, sqlx::FromRow, Serialize, Deserialize, Debug)]
 pub struct Ticket {
@@ -177,79 +164,5 @@ pub async fn delete_ticket(
             );
             false
         }
-    }
-}
-
-async fn is_version_up_to_date(pool: &SqlitePool) -> System {
-    let current_version = sqlx::query("SELECT * FROM system;").fetch_one(*&pool).await;
-    match current_version {
-        Ok(Version) => {
-            return System {
-                version: Version.get("version"),
-                date: Version.get("date"),
-            };
-        }
-        Err(e) => {
-            println!("Err: {:?}", e);
-            return System {
-                version: "0".to_string(),
-                date: "".to_string(),
-            };
-        }
-    }
-}
-async fn migration_down(pool: SqlitePool) {
-    //db down.
-}
-
-async fn db_up(pool: SqlitePool) -> Result<SqliteQueryResult, sqlx::Error> {
-    println!("db_up being activated... running query now.");
-    let migration = sqlx::query(
-        "CREATE TABLE IF NOT EXISTS system(version TEXT NOT NULL, date TEXT NOT NULL);
-        CREATE IF NOT EXISTS TABLE projects(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT); 
-    ",
-    )
-    .execute(&pool)
-    .await;
-
-    let _ =
-        sqlx::query("ALTER TABLE tickets ADD COLUMN project_id INTEGER REFERENCES projects(id);")
-            .execute(&pool)
-            .await?;
-    let _ = sqlx::query("INSERT INTO system(version, date) VALUES($1, $2)")
-        .bind("0.1.0") //2 digits each part of the version so
-        //we have version 0.1.0 if we round
-        //down but can go all the up to version
-        //99.99.99: we have an additional 2 digits which gives us a value of 0 at the start.
-        .bind("12 July 2026 - ~8:00PM")
-        .execute(&pool)
-        .await?;
-
-    println!("Completed migration on DB.");
-
-    Ok(migration?)
-}
-
-pub async fn migration_up(pool: &SqlitePool) {
-    let current_system = is_version_up_to_date(&pool.clone()).await;
-    let new_version = "0.1.0";
-    println!("system return: {:?}", &current_system);
-    if current_system.version != new_version || current_system.version == "0" {
-        match db_up(pool.clone()).await {
-            Ok(_) => println!("successfully migrated db to add users."),
-            Err(_) => {
-                migration_down(pool.clone()).await; // this code was casuing a crash.
-            }
-        }
-    } else if current_system.version == new_version {
-        println!("System version up to date.");
-    } else {
-        println!("potential error: no version matching, starting db roll back with db_down...");
-        migration_down(pool.clone()).await;
-        println!("Database reverted successfully.");
-        //db_down activate
     }
 }
