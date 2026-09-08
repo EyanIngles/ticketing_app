@@ -1,3 +1,31 @@
+# Copy to .env on the Pi (or local machine). Never commit a filled copy.
+# All values stay empty in git.
+
+# Lyra HTTPS bind (host:port). Cert/key paths are local files, not URLs.
 SERVER_IP=""
 TAILSCALE_CERT_PATH=""
 TAILSCALE_KEY_PATH=""
+
+# Public API base for clients (no trailing slash). Set only in local .env.
+BASE_URL=""
+
+# JWT / own OAuth (Lyra is the authorization server; not GitHub).
+JWT_SECRET=""
+OAUTH_CLIENT_ID=""
+OAUTH_REDIRECT=""
+
+# OpenCode on the same Pi (localhost). Username/password for serve basic auth.
+OPENCODE_BASE_URL=""
+OPENCODE_SERVER_USERNAME=""
+OPENCODE_SERVER_PASSWORD=""
+OPENCODE_WORKDIR=""
+
+# Agent identity token (also keep a gitignored agent.env on the Pi).
+LYRA_AGENT_USER=""
+LYRA_AGENT_TOKEN=""
+LYRA_AGENT_NAME=""
+LYRA_AGENT_ROLE=""
+LYRA_AGENT_DEFAULT_MODEL=""
+
+# Agent GitHub CLI on the Pi only (separate GitHub user, not your personal account).
+GH_TOKEN=""

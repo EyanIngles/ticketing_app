@@ -1,5 +1,5 @@
 mod db;
-mod db_down;
+mod migrate;
 mod projects;
 mod tickets;
 use projects::{CreateProject, Project};
@@ -31,13 +31,13 @@ struct CommentCreate {
 async fn main() {
     dotenv().ok();
 
-    let pool = db::init_db()
-        .await
-        .expect("Err: Unable to initialise data base function.");
-
-    println!("🔧 Running migration...");
-
-    tickets::migration_up(&pool).await;
+    let pool = match db::init_db().await {
+        Ok(pool) => pool,
+        Err(err) => {
+            eprintln!("Database init or migration failed: {err}");
+            std::process::exit(1);
+        }
+    };
 
     let app = Router::new()
         .route("/projects", get(fetch_projects))

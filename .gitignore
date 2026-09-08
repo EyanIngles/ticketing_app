@@ -4,6 +4,10 @@ keys/
 
 ./Cargo.lock
 .env
+.env.*
+!.env.example
+agent.env
+**/agent.env
 tickets.db
 tickets.db-shm
 tickets.db-wal
