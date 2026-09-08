@@ -1,10 +1,17 @@
 use sqlx::SqlitePool;
 
-const MIGRATIONS: &[(&str, &str, &str)] = &[(
-    "001",
-    include_str!("../sql/migrations/001_up.sql"),
-    include_str!("../sql/migrations/001_down.sql"),
-)];
+const MIGRATIONS: &[(&str, &str, &str)] = &[
+    (
+        "001",
+        include_str!("../sql/migrations/001_up.sql"),
+        include_str!("../sql/migrations/001_down.sql"),
+    ),
+    (
+        "002",
+        include_str!("../sql/migrations/002_up.sql"),
+        include_str!("../sql/migrations/002_down.sql"),
+    ),
+];
 
 pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let applied = current_schema_migration_version(pool).await;
@@ -121,6 +128,14 @@ mod tests {
         .unwrap();
     }
 
+    async fn assert_schema_version(pool: &SqlitePool, expected: &str) {
+        let version: String = sqlx::query_scalar("SELECT schema_migration_version FROM system")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(version, expected);
+    }
+
     #[tokio::test]
     async fn applies_001_and_is_idempotent() {
         let pool = SqlitePoolOptions::new()
@@ -132,11 +147,7 @@ mod tests {
         run_migrations(&pool).await.unwrap();
         run_migrations(&pool).await.unwrap();
 
-        let version: String = sqlx::query_scalar("SELECT schema_migration_version FROM system")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(version, "001");
+        assert_schema_version(&pool, "002").await;
 
         let status_cols: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM pragma_table_info('tickets') WHERE name = 'status'",
@@ -172,11 +183,7 @@ mod tests {
 
         run_migrations(&pool).await.unwrap();
 
-        let version: String = sqlx::query_scalar("SELECT schema_migration_version FROM system")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(version, "001");
+        assert_schema_version(&pool, "002").await;
 
         let created_at: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'created_at'",
@@ -266,5 +273,40 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(applied_at, 0);
+    }
+
+    #[tokio::test]
+    async fn applies_002_and_down_restores_001() {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        seed_live_schema(&pool).await;
+
+        run_migrations(&pool).await.unwrap();
+
+        assert_schema_version(&pool, "002").await;
+
+        let tables: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('permission_requests', 'oauth_clients', 'oauth_codes', 'refresh_tokens', 'request_logs')",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(tables, 5);
+
+        exec_sql(&pool, include_str!("../sql/migrations/002_down.sql"), true)
+            .await
+            .unwrap();
+
+        assert_schema_version(&pool, "001").await;
+
+        let tables: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('permission_requests', 'oauth_clients', 'oauth_codes', 'refresh_tokens', 'request_logs')",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(tables, 0);
     }
 }
