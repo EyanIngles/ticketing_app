@@ -1,4 +1,6 @@
+mod auth;
 mod db;
+mod jwt;
 mod migrate;
 mod projects;
 mod tickets;
@@ -48,6 +50,9 @@ async fn main() {
         .route("/tickets/:ticket_id", delete(delete_ticket))
         .route("/tickets/:ticket_id/comments", post(add_comment))
         .route("/login", post(user_login))
+        .route("/oauth/authorize", post(auth::oauth_authorize))
+        .route("/oauth/token", post(auth::oauth_token))
+        .route("/current_user", get(auth::current_user))
         .route(
             "/tickets/:ticket_id/comments/:comment_id",
             delete(delete_comment),
