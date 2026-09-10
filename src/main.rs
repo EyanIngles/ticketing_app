@@ -52,7 +52,7 @@ async fn main() {
         .route("/login", post(user_login))
         .route("/oauth/authorize", post(auth::oauth_authorize))
         .route("/oauth/token", post(auth::oauth_token))
-        .route("/me", get(auth::me))
+        .route("/current_user", get(auth::current_user))
         .route(
             "/tickets/:ticket_id/comments/:comment_id",
             delete(delete_comment),
