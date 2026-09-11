@@ -3,6 +3,7 @@ mod db;
 mod jwt;
 mod migrate;
 mod projects;
+mod request_log;
 mod seed;
 mod tickets;
 use projects::{CreateProject, Project};
@@ -11,6 +12,7 @@ use axum::{
     Router,
     extract::{Path, State},
     http::StatusCode,
+    middleware,
     response::Json,
     routing::{delete, get, post, put},
 };
@@ -38,6 +40,8 @@ async fn main() {
         eprintln!("seed failed: {err}");
         std::process::exit(1);
     }
+
+    let pool = Arc::new(pool);
 
     let app = Router::new()
         .route("/projects", get(fetch_projects))
@@ -68,7 +72,11 @@ async fn main() {
         .fallback_service(ServeFile::new(
             "../lyra-frontend/target/dx/lyra-frontend/release/web/public/index.html",
         ))
-        .with_state(Arc::new(pool))
+        .with_state(pool.clone())
+        .layer(middleware::from_fn_with_state(
+            pool.clone(),
+            request_log::log_request,
+        ))
         .layer(tower_http::cors::CorsLayer::permissive());
     //.layer(GovernorLayer::new(*governor_config))
 
