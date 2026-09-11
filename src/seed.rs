@@ -2,6 +2,11 @@ use crate::auth::hash_password;
 use sqlx::SqlitePool;
 
 pub async fn seed(pool: &SqlitePool) -> Result<(), String> {
+    if !seed_on_boot() {
+        println!("seed: skipped (SEED_ON_BOOT is not true)");
+        return Ok(());
+    }
+
     if let Some(human) = human_from_env() {
         upsert_human(pool, &human).await?;
     } else {
@@ -72,6 +77,15 @@ fn nonempty_env(key: &str) -> Option<String> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+fn seed_on_boot() -> bool {
+    nonempty_env("SEED_ON_BOOT")
+        .map(|v| {
+            let v = v.to_ascii_lowercase();
+            v == "1" || v == "true" || v == "yes"
+        })
+        .unwrap_or(false)
 }
 
 async fn username_exists(pool: &SqlitePool, username: &str) -> Result<bool, String> {
@@ -244,5 +258,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(clients, 1);
+    }
+
+    #[tokio::test]
+    async fn seed_skips_without_boot_flag() {
+        unsafe {
+            std::env::remove_var("SEED_ON_BOOT");
+        }
+        let pool = setup_pool().await;
+        seed(&pool).await.unwrap();
+        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(users, 0);
     }
 }

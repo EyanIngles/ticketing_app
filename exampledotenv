@@ -15,7 +15,11 @@ OAUTH_CLIENT_ID=""
 OAUTH_CLIENT_NAME=""
 OAUTH_REDIRECT=""
 
-# Human login (seeded on boot if username does not exist yet).
+# First-boot seed only. Set true once, restart, then set false and remove
+# LYRA_HUMAN_PASSWORD. Login uses the hash in SQLite after that.
+SEED_ON_BOOT=""
+
+# Human login (inserted only if that username is missing).
 LYRA_HUMAN_USERNAME=""
 LYRA_HUMAN_PASSWORD=""
 LYRA_HUMAN_NAME=""
