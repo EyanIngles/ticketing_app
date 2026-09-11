@@ -114,6 +114,18 @@ fn bearer_token(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+pub fn require_claim(
+    headers: &HeaderMap,
+) -> Result<crate::jwt::Claim, (StatusCode, Json<AuthError>)> {
+    let secret =
+        jwt_secret().map_err(|_| auth_err(StatusCode::INTERNAL_SERVER_ERROR, "server_error"))?;
+    let Some(token) = bearer_token(headers) else {
+        return Err(auth_err(StatusCode::UNAUTHORIZED, "invalid_token"));
+    };
+    decode_access_token(&secret, &token)
+        .map_err(|_| auth_err(StatusCode::UNAUTHORIZED, "invalid_token"))
+}
+
 fn text_or_empty(row: &sqlx::sqlite::SqliteRow, column: &str) -> String {
     row.try_get::<Option<String>, _>(column)
         .ok()

@@ -17,18 +17,10 @@ use axum::{
 use axum_macros::{debug_handler, debug_middleware};
 use axum_server::tls_rustls::RustlsConfig;
 use dotenv::dotenv;
-use serde::Deserialize;
-use sqlx::Row;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use tickets::{Comment, LoginRequest, Ticket, TicketCreate, User};
+use tickets::{LoginRequest, Ticket, TicketCreate};
 use tower_http::services::ServeFile;
-//use tokio::sync::Mutex;
-
-#[derive(Deserialize, Debug)]
-struct CommentCreate {
-    text: String,
-}
 
 #[tokio::main]
 async fn main() {
@@ -52,9 +44,19 @@ async fn main() {
         .route("/projects", post(create_project))
         .route("/tickets", get(get_all_tickets))
         .route("/tickets", post(create_ticket))
-        //.route("/tickets/:ticket_id", put(edit_ticket))
-        .route("/tickets/:ticket_id", delete(delete_ticket))
-        .route("/tickets/:ticket_id/comments", post(add_comment))
+        .route(
+            "/tickets/:ticket_id",
+            get(tickets::get_ticket).delete(delete_ticket),
+        )
+        .route("/tickets/:ticket_id/comments", post(tickets::add_comment))
+        .route(
+            "/tickets/:ticket_id/actions/request_pr",
+            post(tickets::request_pr),
+        )
+        .route(
+            "/tickets/:ticket_id/actions/close",
+            post(tickets::close_ticket),
+        )
         .route("/login", post(user_login))
         .route("/oauth/authorize", post(auth::oauth_authorize))
         .route("/oauth/token", post(auth::oauth_token))
@@ -152,32 +154,6 @@ async fn delete_ticket(
         true => StatusCode::NO_CONTENT,
         false => StatusCode::NOT_FOUND,
     }
-}
-
-//async fn edit_ticket(State(pool): State<Arc<SqlitePool>>, Json(payload): Json<TicketCreate>)
-// -> Json<Ticket> {
-//{
-//    println!("editing ticket name or description");
-//}}
-
-async fn add_comment(
-    Path(ticket_id): Path<u32>,
-    State(pool): State<Arc<SqlitePool>>,
-    Json(payload): Json<CommentCreate>,
-) -> Result<Json<Comment>, StatusCode> {
-    let record = sqlx::query("INSERT INTO comments (ticket_id, text) VALUES ($1, $2) RETURNING id")
-        .bind(ticket_id)
-        .bind(&payload.text)
-        .fetch_one(&*pool)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let new_comment = Comment {
-        id: record.get("id"), // ← This is the fix
-        text: payload.text,
-    };
-
-    Ok(Json(new_comment))
 }
 
 async fn delete_comment(
