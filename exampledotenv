@@ -12,7 +12,19 @@ BASE_URL=""
 # JWT / own OAuth (Lyra is the authorization server; not GitHub).
 JWT_SECRET=""
 OAUTH_CLIENT_ID=""
+OAUTH_CLIENT_NAME=""
 OAUTH_REDIRECT=""
+
+# First-boot seed only. Set true once, restart, then set false and remove
+# LYRA_HUMAN_PASSWORD. Login uses the hash in SQLite after that.
+SEED_ON_BOOT=""
+
+# Human login (inserted only if that username is missing).
+LYRA_HUMAN_USERNAME=""
+LYRA_HUMAN_PASSWORD=""
+LYRA_HUMAN_NAME=""
+LYRA_HUMAN_ROLE=""
+LYRA_HUMAN_EMAIL=""
 
 # OpenCode on the same Pi (localhost). Username/password for serve basic auth.
 OPENCODE_BASE_URL=""

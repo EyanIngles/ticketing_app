@@ -3,6 +3,7 @@ mod db;
 mod jwt;
 mod migrate;
 mod projects;
+mod seed;
 mod tickets;
 use projects::{CreateProject, Project};
 
@@ -40,6 +41,11 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    if let Err(err) = seed::seed(&pool).await {
+        eprintln!("seed failed: {err}");
+        std::process::exit(1);
+    }
 
     let app = Router::new()
         .route("/projects", get(fetch_projects))
