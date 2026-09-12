@@ -1,4 +1,5 @@
 mod auth;
+mod constants;
 mod db;
 mod jwt;
 mod migrate;

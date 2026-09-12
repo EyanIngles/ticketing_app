@@ -1,3 +1,4 @@
+use crate::constants::OPENCODE_DISPATCH_PROMPT;
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Row, SqlitePool};
@@ -5,27 +6,27 @@ use sqlx::{Row, SqlitePool};
 pub async fn dispatch_new_ticket(pool: &SqlitePool, ticket_id: i64) {
     if let Err(err) = dispatch_inner(pool, ticket_id).await {
         eprintln!("opencode dispatch ticket {ticket_id}: {err}");
-        let _ = mark_failed(pool, ticket_id, &err).await;
+        let _ = mark_ticket_failed(pool, ticket_id, &err).await;
     }
 }
 
 async fn dispatch_inner(pool: &SqlitePool, ticket_id: i64) -> Result<(), String> {
-    let Some(config) = OpenCodeConfig::from_env() else {
+    let Some(opc_config) = OpenCodeConfig::from_env() else {
         println!("opencode: skipped (OPENCODE_BASE_URL not set)");
         return Ok(());
     };
 
-    let ctx = load_ticket_context(pool, ticket_id)
+    let ticket_context = load_ticket_context(pool, ticket_id)
         .await
         .ok_or_else(|| "ticket not found".to_string())?;
 
     set_status(pool, ticket_id, "running").await?;
 
-    let session_id = create_session(&config, &ctx.ticket_name).await?;
-    save_session(pool, ticket_id, &session_id, &config.model).await?;
+    let session_id = create_session(&opc_config, &ticket_context.ticket_name).await?;
+    save_session(pool, ticket_id, &session_id, &opc_config.model).await?;
 
-    let prompt = build_prompt_with_id(&ctx, &config, ticket_id);
-    prompt_async(&config, &session_id, &prompt).await?;
+    let prompt = build_prompt_with_id(&ticket_context, &opc_config, ticket_id);
+    prompt_async(&opc_config, &session_id, &prompt).await?;
     Ok(())
 }
 
@@ -40,14 +41,14 @@ struct OpenCodeConfig {
 
 impl OpenCodeConfig {
     fn from_env() -> Option<Self> {
-        let base_url = nonempty("OPENCODE_BASE_URL")?;
+        let base_url = env_nonempty("OPENCODE_BASE_URL")?;
         Some(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
-            username: nonempty("OPENCODE_SERVER_USERNAME").unwrap_or_else(|| "opencode".into()),
-            password: nonempty("OPENCODE_SERVER_PASSWORD").unwrap_or_default(),
-            model: nonempty("LYRA_AGENT_DEFAULT_MODEL").unwrap_or_else(|| "Grok4.6".into()),
-            agent_name: nonempty("LYRA_AGENT_NAME").unwrap_or_else(|| "Mark".into()),
-            agent_role: nonempty("LYRA_AGENT_ROLE").unwrap_or_else(|| "Engineer".into()),
+            username: env_nonempty("OPENCODE_SERVER_USERNAME").unwrap_or_else(|| "opencode".into()),
+            password: env_nonempty("OPENCODE_SERVER_PASSWORD").unwrap_or_default(),
+            model: env_nonempty("LYRA_AGENT_DEFAULT_MODEL").unwrap_or_else(|| "Grok4.6".into()),
+            agent_name: env_nonempty("LYRA_AGENT_NAME").unwrap_or_else(|| "Mark".into()),
+            agent_role: env_nonempty("LYRA_AGENT_ROLE").unwrap_or_else(|| "Engineer".into()),
         })
     }
 }
@@ -59,29 +60,26 @@ struct TicketContext {
     project_description: String,
 }
 
-fn nonempty(key: &str) -> Option<String> {
+fn env_nonempty(key: &str) -> Option<String> {
     dotenv::var(key)
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
 
-fn build_prompt_with_id(ctx: &TicketContext, cfg: &OpenCodeConfig, ticket_id: i64) -> String {
-    format!(
-        "You are {name}, role {role} (type Agent).\n\
-         Project: {project}\n\
-         Project description: {project_desc}\n\
-         Ticket #{ticket_id}: {ticket}\n\
-         Task: {task}\n\n\
-         Do the work in this repo. Comment a short markdown summary via Lyra MCP, \
-         set ticket status awaiting_you. Do not open a PR until asked.",
-        name = cfg.agent_name,
-        role = cfg.agent_role,
-        project = ctx.project_name,
-        project_desc = ctx.project_description,
-        ticket = ctx.ticket_name,
-        task = ctx.ticket_description,
-    )
+fn build_prompt_with_id(
+    ticket_context: &TicketContext,
+    opc_config: &OpenCodeConfig,
+    ticket_id: i64,
+) -> String {
+    OPENCODE_DISPATCH_PROMPT
+        .replace("{agent_name}", &opc_config.agent_name)
+        .replace("{agent_role}", &opc_config.agent_role)
+        .replace("{project_name}", &ticket_context.project_name)
+        .replace("{project_description}", &ticket_context.project_description)
+        .replace("{ticket_id}", &ticket_id.to_string())
+        .replace("{ticket_name}", &ticket_context.ticket_name)
+        .replace("{ticket_description}", &ticket_context.ticket_description)
 }
 
 async fn load_ticket_context(pool: &SqlitePool, ticket_id: i64) -> Option<TicketContext> {
@@ -137,7 +135,7 @@ async fn save_session(
     Ok(())
 }
 
-async fn mark_failed(pool: &SqlitePool, ticket_id: i64, err: &str) -> Result<(), String> {
+async fn mark_ticket_failed(pool: &SqlitePool, ticket_id: i64, err: &str) -> Result<(), String> {
     set_status(pool, ticket_id, "failed").await?;
     sqlx::query(
         r#"INSERT INTO comments ("ticket_id", "text", "author_name", "author_type", "format")
@@ -159,12 +157,12 @@ struct SessionResponse {
     id: String,
 }
 
-async fn create_session(config: &OpenCodeConfig, title: &str) -> Result<String, String> {
+async fn create_session(opc_config: &OpenCodeConfig, title: &str) -> Result<String, String> {
     let http = reqwest::Client::new();
-    let url = format!("{}/session", config.base_url);
+    let url = format!("{}/session", opc_config.base_url);
     let mut req = http.post(&url).json(&json!({ "title": title }));
-    if !config.password.is_empty() {
-        req = req.basic_auth(&config.username, Some(&config.password));
+    if !opc_config.password.is_empty() {
+        req = req.basic_auth(&opc_config.username, Some(&opc_config.password));
     }
     let response = req.send().await.map_err(|e| e.to_string())?;
     if !response.status().is_success() {
@@ -174,14 +172,18 @@ async fn create_session(config: &OpenCodeConfig, title: &str) -> Result<String, 
     Ok(session.id)
 }
 
-async fn prompt_async(config: &OpenCodeConfig, session_id: &str, text: &str) -> Result<(), String> {
+async fn prompt_async(
+    opc_config: &OpenCodeConfig,
+    session_id: &str,
+    text: &str,
+) -> Result<(), String> {
     let http = reqwest::Client::new();
-    let url = format!("{}/session/{session_id}/prompt_async", config.base_url);
+    let url = format!("{}/session/{session_id}/prompt_async", opc_config.base_url);
     let mut req = http.post(&url).json(&json!({
         "parts": [{ "type": "text", "text": text }]
     }));
-    if !config.password.is_empty() {
-        req = req.basic_auth(&config.username, Some(&config.password));
+    if !opc_config.password.is_empty() {
+        req = req.basic_auth(&opc_config.username, Some(&opc_config.password));
     }
     let response = req.send().await.map_err(|e| e.to_string())?;
     if !response.status().is_success() && response.status().as_u16() != 204 {
@@ -196,13 +198,13 @@ mod tests {
 
     #[test]
     fn prompt_includes_project_and_task() {
-        let ctx = TicketContext {
+        let ticket_context = TicketContext {
             ticket_name: "Add dark mode".into(),
             ticket_description: "Toggle on settings".into(),
             project_name: "Lyra".into(),
             project_description: "Ticketing".into(),
         };
-        let cfg = OpenCodeConfig {
+        let opc_config = OpenCodeConfig {
             base_url: "http://127.0.0.1:4096".into(),
             username: "opencode".into(),
             password: String::new(),
@@ -210,7 +212,7 @@ mod tests {
             agent_name: "Mark".into(),
             agent_role: "Engineer".into(),
         };
-        let prompt = build_prompt_with_id(&ctx, &cfg, 12);
+        let prompt = build_prompt_with_id(&ticket_context, &opc_config, 12);
         assert!(prompt.contains("Project: Lyra"));
         assert!(prompt.contains("Project description: Ticketing"));
         assert!(prompt.contains("Ticket #12: Add dark mode"));
