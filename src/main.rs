@@ -1,7 +1,9 @@
 mod auth;
+mod constants;
 mod db;
 mod jwt;
 mod migrate;
+mod opencode;
 mod projects;
 mod request_log;
 mod seed;

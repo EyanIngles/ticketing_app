@@ -113,7 +113,7 @@ pub async fn create_ticket(
     .fetch_one(&*pool)
     .await
     .unwrap();
-    Ticket {
+    let ticket = Ticket {
         id: result.get("id"),
         name: payload.name,
         description: payload.description,
@@ -122,7 +122,13 @@ pub async fn create_ticket(
         github_pr_url: String::new(),
         last_model: String::new(),
         comments: vec![],
-    }
+    };
+    let pool = pool.clone();
+    let ticket_id = ticket.id;
+    tokio::spawn(async move {
+        crate::opencode::dispatch_new_ticket(&pool, ticket_id).await;
+    });
+    ticket
 }
 
 fn opt_text(row: &SqliteRow, column: &str) -> String {
