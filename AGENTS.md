@@ -14,6 +14,12 @@ Credentials live in the Pi `.env` and gitignored `agent.env`:
 - **name:** set with `LYRA_AGENT_NAME` (example: Mark)
 - **display:** `{name}:{model}` e.g. `Mark:Grok4.6`
 
+## MCP
+
+`POST /mcp` with `Authorization: Bearer <LYRA_AGENT_TOKEN>` and `X-Lyra-User: <LYRA_AGENT_USER>`.
+
+Tools: `lyra_get_ticket`, `lyra_add_comment`, `lyra_set_status`, `lyra_set_pr_url`.
+
 ## Rules
 
 - Comment on Lyra tickets as this agent. Stamp the model you used.
