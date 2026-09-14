@@ -1,4 +1,5 @@
 use crate::auth::{AuthError, UserRow, require_agent};
+use crate::constants::{ROLE_ENGINEER, TICKET_STATUSES};
 use crate::tickets::{self, Ticket};
 use axum::{
     extract::{Path, State},
@@ -149,7 +150,7 @@ async fn call_tool(
         "lyra_update_pr_url" => {
             let id = arg_i64(&args, "ticket_id")?;
             let url = arg_str(&args, "url")?;
-            set_pr_url(pool, id, &url).await?;
+            update_pr_url(pool, id, &url).await?;
             format!("ticket {id} pr {url}")
         }
         _ => {
@@ -164,20 +165,10 @@ async fn call_tool(
     }))
 }
 
-const TICKET_STATUSES: &[&str] = &[
-    "queued",
-    "running",
-    "awaiting_you",
-    "pr_opening",
-    "pending_review",
-    "closed",
-    "failed",
-];
-
 fn tool_allowed(tool: &str, role: &str) -> bool {
     match tool {
         "lyra_get_ticket" | "lyra_add_comment" => true,
-        "lyra_set_status" | "lyra_update_pr_url" => role.eq_ignore_ascii_case("Engineer"),
+        "lyra_set_status" | "lyra_update_pr_url" => role.eq_ignore_ascii_case(ROLE_ENGINEER),
         _ => false,
     }
 }
@@ -311,7 +302,7 @@ async fn set_status(
     Ok(())
 }
 
-async fn set_pr_url(
+async fn update_pr_url(
     pool: &SqlitePool,
     ticket_id: i64,
     url: &str,

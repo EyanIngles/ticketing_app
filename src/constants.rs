@@ -1,3 +1,15 @@
+pub const TICKET_STATUSES: &[&str] = &[
+    "queued",
+    "running",
+    "awaiting_you",
+    "pr_opening",
+    "pending_review",
+    "closed",
+    "failed",
+];
+
+pub const ROLE_ENGINEER: &str = "Engineer";
+
 pub const OPENCODE_DISPATCH_PROMPT: &str = "\
 You are {agent_name}, role {agent_role} (type Agent).
 Project: {project_name}
