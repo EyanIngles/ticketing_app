@@ -5,6 +5,7 @@ mod jwt;
 mod mcp;
 mod migrate;
 mod opencode;
+mod permissions;
 mod projects;
 mod request_log;
 mod seed;
@@ -69,6 +70,12 @@ async fn main() {
         .route("/oauth/token", post(auth::oauth_token))
         .route("/current_user", get(auth::current_user))
         .route("/mcp", post(mcp::mcp_post))
+        .route("/permissions", get(permissions::list_permissions))
+        .route(
+            "/permissions/:id/approve",
+            post(permissions::approve_permission),
+        )
+        .route("/permissions/:id/deny", post(permissions::deny_permission))
         .route(
             "/tickets/:ticket_id/comments/:comment_id",
             delete(delete_comment),

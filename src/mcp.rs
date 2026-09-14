@@ -103,6 +103,21 @@ fn tool_defs() -> Value {
                 },
                 "required": ["ticket_id", "url"]
             }
+        },
+        {
+            "name": "lyra_request_permission",
+            "description": "Ask the human to approve a tool/action. Creates a pending permission for iOS poll. Include OpenCode permission_id when pausing a session.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ticket_id": { "type": "integer" },
+                    "tool": { "type": "string" },
+                    "payload": { "type": "string" },
+                    "permission_id": { "type": "string" },
+                    "model": { "type": "string" }
+                },
+                "required": ["ticket_id", "tool"]
+            }
         }
     ])
 }
@@ -153,6 +168,47 @@ async fn call_tool(
             update_pr_url(pool, id, &url).await?;
             format!("ticket {id} pr {url}")
         }
+        "lyra_request_permission" => {
+            let id = arg_i64(&args, "ticket_id")?;
+            let tool = arg_str(&args, "tool")?;
+            let payload = args
+                .get("payload")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let permission_id = args
+                .get("permission_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let model = args
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| agent.default_model.clone());
+            let perm_id = crate::permissions::insert_request(
+                pool,
+                id,
+                agent.id,
+                &agent.name,
+                &agent.role,
+                &model,
+                &tool,
+                &payload,
+                &permission_id,
+            )
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(AuthError {
+                        error: "server_error".into(),
+                    }),
+                )
+            })?;
+            format!("permission {perm_id} pending on ticket {id}")
+        }
         _ => {
             return Ok(json!({
                 "content": [{ "type": "text", "text": "unknown tool" }],
@@ -167,7 +223,7 @@ async fn call_tool(
 
 fn tool_allowed(tool: &str, role: &str) -> bool {
     match tool {
-        "lyra_get_ticket" | "lyra_add_comment" => true,
+        "lyra_get_ticket" | "lyra_add_comment" | "lyra_request_permission" => true,
         "lyra_set_status" | "lyra_update_pr_url" => role.eq_ignore_ascii_case(ROLE_ENGINEER),
         _ => false,
     }
