@@ -64,14 +64,16 @@ pub struct AuthError {
     pub error: String,
 }
 
-struct UserRow {
-    id: i64,
-    username: String,
-    password: String,
-    user_type: String,
-    role: String,
-    name: String,
-    email: String,
+pub struct UserRow {
+    pub id: i64,
+    pub username: String,
+    pub password: String,
+    pub user_type: String,
+    pub role: String,
+    pub name: String,
+    pub email: String,
+    pub token_hash: String,
+    pub default_model: String,
 }
 
 pub fn hash_password(password: &str) -> Result<String, String> {
@@ -83,7 +85,7 @@ pub fn hash_password(password: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-fn verify_password(password: &str, hash: &str) -> bool {
+pub fn verify_password(password: &str, hash: &str) -> bool {
     let Ok(parsed) = PasswordHash::new(hash) else {
         return false;
     };
@@ -106,7 +108,7 @@ fn jwt_secret() -> Result<String, StatusCode> {
     dotenv::var("JWT_SECRET").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-fn bearer_token(headers: &HeaderMap) -> Option<String> {
+pub fn bearer_token(headers: &HeaderMap) -> Option<String> {
     let value = headers.get("authorization")?.to_str().ok()?;
     value
         .strip_prefix("Bearer ")
@@ -135,7 +137,7 @@ fn text_or_empty(row: &sqlx::sqlite::SqliteRow, column: &str) -> String {
 
 async fn load_user_by_username(pool: &SqlitePool, username: &str) -> Option<UserRow> {
     let row = sqlx::query(
-        r#"SELECT "id", "username", "password", "type", "role", "name", "email"
+        r#"SELECT "id", "username", "password", "type", "role", "name", "email", "token_hash", "default_model"
            FROM users WHERE "username" = $1"#,
     )
     .bind(username)
@@ -151,7 +153,38 @@ async fn load_user_by_username(pool: &SqlitePool, username: &str) -> Option<User
         role: text_or_empty(&row, "role"),
         name: text_or_empty(&row, "name"),
         email: text_or_empty(&row, "email"),
+        token_hash: text_or_empty(&row, "token_hash"),
+        default_model: text_or_empty(&row, "default_model"),
     })
+}
+
+pub async fn require_agent(
+    pool: &SqlitePool,
+    headers: &HeaderMap,
+) -> Result<UserRow, (StatusCode, Json<AuthError>)> {
+    let username = headers
+        .get("x-lyra-user")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| auth_err(StatusCode::UNAUTHORIZED, "invalid_token"))?;
+    let token =
+        bearer_token(headers).ok_or_else(|| auth_err(StatusCode::UNAUTHORIZED, "invalid_token"))?;
+    let Some(user) = load_user_by_username(pool, &username).await else {
+        return Err(auth_err(StatusCode::UNAUTHORIZED, "invalid_token"));
+    };
+    if !user.user_type.eq_ignore_ascii_case("Agent") {
+        return Err(auth_err(StatusCode::FORBIDDEN, "not_agent"));
+    }
+    let hash = if user.token_hash.is_empty() {
+        &user.password
+    } else {
+        &user.token_hash
+    };
+    if !verify_password(&token, hash) {
+        return Err(auth_err(StatusCode::UNAUTHORIZED, "invalid_token"));
+    }
+    Ok(user)
 }
 
 fn auth_err(status: StatusCode, error: &str) -> (StatusCode, Json<AuthError>) {

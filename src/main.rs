@@ -2,6 +2,7 @@ mod auth;
 mod constants;
 mod db;
 mod jwt;
+mod mcp;
 mod migrate;
 mod opencode;
 mod projects;
@@ -67,6 +68,7 @@ async fn main() {
         .route("/oauth/authorize", post(auth::oauth_authorize))
         .route("/oauth/token", post(auth::oauth_token))
         .route("/current_user", get(auth::current_user))
+        .route("/mcp", post(mcp::mcp_post))
         .route(
             "/tickets/:ticket_id/comments/:comment_id",
             delete(delete_comment),
