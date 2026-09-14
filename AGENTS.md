@@ -18,7 +18,7 @@ Credentials live in the Pi `.env` and gitignored `agent.env`:
 
 `POST /mcp` with `Authorization: Bearer <LYRA_AGENT_TOKEN>` and `X-Lyra-User: <LYRA_AGENT_USER>`.
 
-Tools: `lyra_get_ticket`, `lyra_add_comment`, `lyra_set_status`, `lyra_set_pr_url`.
+Tools: `lyra_get_ticket`, `lyra_add_comment` (any agent); `lyra_set_status`, `lyra_update_pr_url` (Engineer). `lyra_update_pr_url` overwrites an existing PR URL.
 
 ## Rules
 

@@ -81,7 +81,7 @@ fn tool_defs() -> Value {
         },
         {
             "name": "lyra_set_status",
-            "description": "Set ticket status (e.g. awaiting_you, pending_review, failed)",
+            "description": "Set ticket status. Allowed: queued, running, awaiting_you, pr_opening, pending_review, closed, failed. Engineer role only.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -92,8 +92,8 @@ fn tool_defs() -> Value {
             }
         },
         {
-            "name": "lyra_set_pr_url",
-            "description": "Store the GitHub PR URL and set status pending_review",
+            "name": "lyra_update_pr_url",
+            "description": "Set or replace the GitHub PR URL on a ticket and set status pending_review. Call again if the URL moves. Engineer role only.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -114,6 +114,14 @@ async fn call_tool(
     let params = params.unwrap_or(json!({}));
     let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
+    if !tool_allowed(name, &agent.role) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(AuthError {
+                error: "forbidden_role".into(),
+            }),
+        ));
+    }
     let text = match name {
         "lyra_get_ticket" => {
             let id = arg_i64(&args, "ticket_id")?;
@@ -134,11 +142,11 @@ async fn call_tool(
         }
         "lyra_set_status" => {
             let id = arg_i64(&args, "ticket_id")?;
-            let status = arg_str(&args, "status")?;
-            set_status(pool, id, &status).await?;
+            let status = parse_ticket_status(&arg_str(&args, "status")?)?;
+            set_status(pool, id, status).await?;
             format!("ticket {id} status {status}")
         }
-        "lyra_set_pr_url" => {
+        "lyra_update_pr_url" => {
             let id = arg_i64(&args, "ticket_id")?;
             let url = arg_str(&args, "url")?;
             set_pr_url(pool, id, &url).await?;
@@ -154,6 +162,39 @@ async fn call_tool(
     Ok(json!({
         "content": [{ "type": "text", "text": text }]
     }))
+}
+
+const TICKET_STATUSES: &[&str] = &[
+    "queued",
+    "running",
+    "awaiting_you",
+    "pr_opening",
+    "pending_review",
+    "closed",
+    "failed",
+];
+
+fn tool_allowed(tool: &str, role: &str) -> bool {
+    match tool {
+        "lyra_get_ticket" | "lyra_add_comment" => true,
+        "lyra_set_status" | "lyra_update_pr_url" => role.eq_ignore_ascii_case("Engineer"),
+        _ => false,
+    }
+}
+
+fn parse_ticket_status(raw: &str) -> Result<&'static str, (StatusCode, Json<AuthError>)> {
+    TICKET_STATUSES
+        .iter()
+        .copied()
+        .find(|allowed| raw.eq_ignore_ascii_case(allowed))
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(AuthError {
+                    error: "invalid_status".into(),
+                }),
+            )
+        })
 }
 
 fn arg_i64(args: &Value, key: &str) -> Result<i64, (StatusCode, Json<AuthError>)> {
@@ -452,5 +493,71 @@ mod tests {
         assert_eq!(ticket.status, "awaiting_you");
         assert_eq!(ticket.comments[0].display, "Mark:Grok4.6");
         assert_eq!(ticket.last_model, "Grok4.6");
+    }
+
+    #[tokio::test]
+    async fn mcp_rejects_unknown_status() {
+        let (pool, ticket_id) = setup().await;
+        let err = mcp_post(
+            State(Arc::new(pool)),
+            agent_headers(),
+            Json(JsonRpcRequest {
+                jsonrpc: Some("2.0".into()),
+                id: Some(json!(1)),
+                method: "tools/call".into(),
+                params: Some(json!({
+                    "name": "lyra_set_status",
+                    "arguments": { "ticket_id": ticket_id, "status": "nope" }
+                })),
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert_eq!(err.1.0.error, "invalid_status");
+    }
+
+    #[tokio::test]
+    async fn mcp_marketing_cannot_set_status() {
+        let (pool, ticket_id) = setup().await;
+        let hash = hash_password("mkt-token").unwrap();
+        sqlx::query(
+            r#"INSERT INTO users ("email", "password", "username", "type", "role", "name", "token_hash")
+               VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+        )
+        .bind("mia@agent.lyra")
+        .bind(&hash)
+        .bind("mia-mkt")
+        .bind("Agent")
+        .bind("Marketing")
+        .bind("Mia")
+        .bind(&hash)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("x-lyra-user", HeaderValue::from_static("mia-mkt"));
+        headers.insert(
+            "authorization",
+            HeaderValue::from_static("Bearer mkt-token"),
+        );
+        let err = mcp_post(
+            State(Arc::new(pool)),
+            headers,
+            Json(JsonRpcRequest {
+                jsonrpc: Some("2.0".into()),
+                id: Some(json!(1)),
+                method: "tools/call".into(),
+                params: Some(json!({
+                    "name": "lyra_set_status",
+                    "arguments": { "ticket_id": ticket_id, "status": "awaiting_you" }
+                })),
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
     }
 }
