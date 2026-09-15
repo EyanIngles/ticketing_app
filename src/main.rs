@@ -16,7 +16,7 @@ use projects::{CreateProject, Project};
 use axum::{
     Router,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     middleware,
     response::Json,
     routing::{delete, get, post, put},
@@ -162,11 +162,11 @@ async fn user_login(
 
 async fn create_ticket(
     State(pool): State<Arc<SqlitePool>>,
+    headers: HeaderMap,
     Json(payload): Json<TicketCreate>,
-) -> Json<Ticket> {
-    //println!("{:?}", Json(payload));
-    let ticket = tickets::create_ticket(State(pool), Json(payload)).await;
-    Json(ticket)
+) -> Result<Json<Ticket>, (StatusCode, Json<auth::AuthError>)> {
+    let ticket = tickets::create_ticket(State(pool), headers, Json(payload)).await?;
+    Ok(Json(ticket))
 }
 
 async fn delete_ticket(

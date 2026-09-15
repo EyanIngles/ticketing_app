@@ -97,10 +97,21 @@ pub async fn get_tickets(State(pool): State<Arc<SqlitePool>>) -> Vec<Ticket> {
         .collect();
     tickets
 }
+fn server_error() -> (StatusCode, Json<AuthError>) {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(AuthError {
+            error: "server_error".into(),
+        }),
+    )
+}
+
 pub async fn create_ticket(
     State(pool): State<Arc<SqlitePool>>,
+    headers: HeaderMap,
     Json(payload): Json<TicketCreate>,
-) -> Ticket {
+) -> Result<Ticket, (StatusCode, Json<AuthError>)> {
+    require_claim(&headers)?;
     let result = query(
         r#"INSERT INTO tickets ("name", "description", "project_id", "status")
         VALUES ($1, $2, $3, $4)
@@ -128,7 +139,7 @@ pub async fn create_ticket(
     tokio::spawn(async move {
         crate::opencode::dispatch_new_ticket(&pool, ticket_id).await;
     });
-    ticket
+    Ok(ticket)
 }
 
 fn opt_text(row: &SqliteRow, column: &str) -> String {
@@ -201,7 +212,7 @@ async fn comments_for_ticket(pool: &SqlitePool, ticket_id: i64) -> Vec<Comment> 
 pub async fn get_ticket(
     State(pool): State<Arc<SqlitePool>>,
     Path(ticket_id): Path<i64>,
-) -> Result<Json<Ticket>, StatusCode> {
+) -> Result<Json<Ticket>, (StatusCode, Json<AuthError>)> {
     let row = sqlx::query(
         r#"SELECT "id", "name", "description", "project_id", "status", "github_pr_url", "last_model"
            FROM tickets WHERE "id" = $1"#,
@@ -209,9 +220,14 @@ pub async fn get_ticket(
     .bind(ticket_id)
     .fetch_optional(&*pool)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|_| server_error())?;
     let Some(row) = row else {
-        return Err(StatusCode::NOT_FOUND);
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(AuthError {
+                error: "not_found".into(),
+            }),
+        ));
     };
     let comments = comments_for_ticket(&pool, ticket_id).await;
     Ok(Json(ticket_from_row(&row, comments)))
@@ -222,28 +238,29 @@ pub async fn add_comment(
     Path(ticket_id): Path<i64>,
     headers: HeaderMap,
     Json(payload): Json<CommentCreate>,
-) -> Result<Json<Comment>, StatusCode> {
+) -> Result<Json<Comment>, (StatusCode, Json<AuthError>)> {
+    let claim = require_claim(&headers)?;
     if payload.text.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(AuthError {
+                error: "empty_text".into(),
+            }),
+        ));
     }
-    let claim = require_claim(&headers).ok();
-    let (author_name, author_type, author_role) = match &claim {
-        Some(c) => (c.name.clone(), c.user_type.clone(), c.role.clone()),
-        None => (String::new(), String::new(), String::new()),
-    };
     let record = sqlx::query(
         r#"INSERT INTO comments ("ticket_id", "text", "author_name", "author_type", "author_role", "format")
            VALUES ($1, $2, $3, $4, $5, $6) RETURNING "id", "text", "author_name", "author_type", "author_role", "model", "format""#,
     )
     .bind(ticket_id)
     .bind(&payload.text)
-    .bind(&author_name)
-    .bind(&author_type)
-    .bind(&author_role)
+    .bind(&claim.name)
+    .bind(&claim.user_type)
+    .bind(&claim.role)
     .bind("markdown")
     .fetch_one(&*pool)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|_| server_error())?;
     Ok(Json(comment_from_row(&record)))
 }
 
@@ -260,14 +277,7 @@ pub async fn deploy_ticket(
     .bind(ticket_id)
     .fetch_optional(&*pool)
     .await
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(AuthError {
-                error: "server_error".into(),
-            }),
-        )
-    })?;
+    .map_err(|_| server_error())?;
     let Some(row) = row else {
         return Err((
             StatusCode::NOT_FOUND,
@@ -297,43 +307,25 @@ pub async fn request_pr(
     State(pool): State<Arc<SqlitePool>>,
     Path(ticket_id): Path<i64>,
     headers: HeaderMap,
-) -> Result<Json<Ticket>, (StatusCode, Json<crate::auth::AuthError>)> {
+) -> Result<Json<Ticket>, (StatusCode, Json<AuthError>)> {
     require_claim(&headers)?;
-    set_ticket_status(&pool, ticket_id, "pr_opening")
-        .await
-        .map_err(|s| {
-            (
-                s,
-                Json(crate::auth::AuthError {
-                    error: "not_found".into(),
-                }),
-            )
-        })
+    set_ticket_status(&pool, ticket_id, "pr_opening").await
 }
 
 pub async fn close_ticket(
     State(pool): State<Arc<SqlitePool>>,
     Path(ticket_id): Path<i64>,
     headers: HeaderMap,
-) -> Result<Json<Ticket>, (StatusCode, Json<crate::auth::AuthError>)> {
+) -> Result<Json<Ticket>, (StatusCode, Json<AuthError>)> {
     require_claim(&headers)?;
-    set_ticket_status(&pool, ticket_id, "closed")
-        .await
-        .map_err(|s| {
-            (
-                s,
-                Json(crate::auth::AuthError {
-                    error: "not_found".into(),
-                }),
-            )
-        })
+    set_ticket_status(&pool, ticket_id, "closed").await
 }
 
 async fn set_ticket_status(
     pool: &SqlitePool,
     ticket_id: i64,
     status: &str,
-) -> Result<Json<Ticket>, StatusCode> {
+) -> Result<Json<Ticket>, (StatusCode, Json<AuthError>)> {
     let result = sqlx::query(
         r#"UPDATE tickets SET "status" = $1, "updated_at" = datetime('now') WHERE "id" = $2"#,
     )
@@ -341,9 +333,14 @@ async fn set_ticket_status(
     .bind(ticket_id)
     .execute(pool)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|_| server_error())?;
     if result.rows_affected() == 0 {
-        return Err(StatusCode::NOT_FOUND);
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(AuthError {
+                error: "not_found".into(),
+            }),
+        ));
     }
     let row = sqlx::query(
         r#"SELECT "id", "name", "description", "project_id", "status", "github_pr_url", "last_model"
@@ -352,7 +349,7 @@ async fn set_ticket_status(
     .bind(ticket_id)
     .fetch_one(pool)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|_| server_error())?;
     let comments = comments_for_ticket(pool, ticket_id).await;
     Ok(Json(ticket_from_row(&row, comments)))
 }
@@ -425,7 +422,9 @@ pub async fn delete_ticket(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jwt::encode_access_token;
     use crate::migrate::run_migrations;
+    use axum::http::HeaderValue;
     use sqlx::sqlite::SqlitePoolOptions;
 
     async fn setup_pool() -> SqlitePool {
@@ -472,18 +471,38 @@ mod tests {
         pool
     }
 
+    fn jwt_headers(user_type: &str, role: &str) -> HeaderMap {
+        unsafe {
+            std::env::set_var("JWT_SECRET", "test-jwt-secret");
+        }
+        let token =
+            encode_access_token("test-jwt-secret", "eyan", user_type, role, "Eyan").unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+        );
+        headers
+    }
+
+    fn human_headers() -> HeaderMap {
+        jwt_headers("Human", "Owner")
+    }
+
     #[tokio::test]
     async fn get_ticket_includes_markdown_comment_display() {
         let pool = setup_pool().await;
         let ticket = create_ticket(
             State(Arc::new(pool.clone())),
+            human_headers(),
             Json(TicketCreate {
                 name: "Task".into(),
                 description: "Do the thing".into(),
                 project_id: 1,
             }),
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(ticket.status, "queued");
 
         sqlx::query(
@@ -514,17 +533,108 @@ mod tests {
         let pool = setup_pool().await;
         let ticket = create_ticket(
             State(Arc::new(pool.clone())),
+            human_headers(),
             Json(TicketCreate {
                 name: "Task".into(),
                 description: "Do the thing".into(),
                 project_id: 1,
             }),
         )
-        .await;
+        .await
+        .unwrap();
         let err = request_pr(State(Arc::new(pool)), Path(ticket.id), HeaderMap::new())
             .await
             .err()
             .unwrap();
         assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1.0.error, "invalid_token");
+    }
+
+    #[tokio::test]
+    async fn get_ticket_missing_is_not_found() {
+        let pool = setup_pool().await;
+        let err = get_ticket(State(Arc::new(pool)), Path(999))
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.0, StatusCode::NOT_FOUND);
+        assert_eq!(err.1.0.error, "not_found");
+    }
+
+    #[tokio::test]
+    async fn add_comment_empty_text_is_bad_request() {
+        let pool = setup_pool().await;
+        let ticket = create_ticket(
+            State(Arc::new(pool.clone())),
+            human_headers(),
+            Json(TicketCreate {
+                name: "Task".into(),
+                description: "Do the thing".into(),
+                project_id: 1,
+            }),
+        )
+        .await
+        .unwrap();
+        let err = add_comment(
+            State(Arc::new(pool)),
+            Path(ticket.id),
+            human_headers(),
+            Json(CommentCreate {
+                text: "   ".into(),
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert_eq!(err.1.0.error, "empty_text");
+    }
+
+    #[tokio::test]
+    async fn add_comment_without_token_is_unauthorized() {
+        let pool = setup_pool().await;
+        let ticket = create_ticket(
+            State(Arc::new(pool.clone())),
+            human_headers(),
+            Json(TicketCreate {
+                name: "Task".into(),
+                description: "Do the thing".into(),
+                project_id: 1,
+            }),
+        )
+        .await
+        .unwrap();
+        let err = add_comment(
+            State(Arc::new(pool)),
+            Path(ticket.id),
+            HeaderMap::new(),
+            Json(CommentCreate {
+                text: "hello".into(),
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1.0.error, "invalid_token");
+    }
+
+    #[tokio::test]
+    async fn create_ticket_without_token_is_unauthorized() {
+        let pool = setup_pool().await;
+        let err = create_ticket(
+            State(Arc::new(pool)),
+            HeaderMap::new(),
+            Json(TicketCreate {
+                name: "Task".into(),
+                description: "Do the thing".into(),
+                project_id: 1,
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1.0.error, "invalid_token");
     }
 }
