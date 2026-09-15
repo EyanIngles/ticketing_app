@@ -10,6 +10,10 @@ pub const TICKET_STATUSES: &[&str] = &[
 
 pub const ROLE_ENGINEER: &str = "Engineer";
 
+pub const PERMISSION_PENDING: &str = "pending";
+pub const PERMISSION_APPROVED: &str = "approved";
+pub const PERMISSION_DENIED: &str = "denied";
+
 pub const OPENCODE_DISPATCH_PROMPT: &str = "\
 You are {agent_name}, role {agent_role} (type Agent).
 Project: {project_name}

@@ -172,6 +172,35 @@ async fn create_session(opc_config: &OpenCodeConfig, title: &str) -> Result<Stri
     Ok(session.id)
 }
 
+pub async fn respond_to_permission(
+    session_id: &str,
+    permission_id: &str,
+    allow: bool,
+) -> Result<(), String> {
+    let Some(opc_config) = OpenCodeConfig::from_env() else {
+        println!("opencode: skip permission reply (OPENCODE_BASE_URL not set)");
+        return Ok(());
+    };
+    if session_id.is_empty() || permission_id.is_empty() {
+        return Ok(());
+    }
+    let http = reqwest::Client::new();
+    let url = format!(
+        "{}/session/{session_id}/permissions/{permission_id}",
+        opc_config.base_url
+    );
+    let response_value = if allow { "once" } else { "reject" };
+    let mut req = http.post(&url).json(&json!({ "response": response_value }));
+    if !opc_config.password.is_empty() {
+        req = req.basic_auth(&opc_config.username, Some(&opc_config.password));
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() && response.status().as_u16() != 204 {
+        return Err(format!("permission reply HTTP {}", response.status()));
+    }
+    Ok(())
+}
+
 async fn prompt_async(
     opc_config: &OpenCodeConfig,
     session_id: &str,

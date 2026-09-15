@@ -128,6 +128,16 @@ pub fn require_claim(
         .map_err(|_| auth_err(StatusCode::UNAUTHORIZED, "invalid_token"))
 }
 
+pub fn require_human(
+    headers: &HeaderMap,
+) -> Result<crate::jwt::Claim, (StatusCode, Json<AuthError>)> {
+    let claim = require_claim(headers)?;
+    if !claim.user_type.eq_ignore_ascii_case("Human") {
+        return Err(auth_err(StatusCode::FORBIDDEN, "not_human"));
+    }
+    Ok(claim)
+}
+
 fn text_or_empty(row: &sqlx::sqlite::SqliteRow, column: &str) -> String {
     row.try_get::<Option<String>, _>(column)
         .ok()
