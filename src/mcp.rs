@@ -277,14 +277,6 @@ async fn load_ticket(
     tickets::get_ticket(State(Arc::new(pool.clone())), Path(ticket_id))
         .await
         .map(|j| j.0)
-        .map_err(|s| {
-            (
-                s,
-                Json(AuthError {
-                    error: "not_found".into(),
-                }),
-            )
-        })
 }
 
 async fn add_agent_comment(
