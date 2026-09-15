@@ -1,3 +1,4 @@
+use crate::constants::RELEASE_BIN_NAME;
 use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
@@ -69,9 +70,10 @@ fn restore_binary(snapshot: &Snapshot) -> Result<(), String> {
 }
 
 fn install_release_binary(repo_dir: &str, bin_path: &str) -> Result<(), String> {
-    let src = Path::new(repo_dir).join("target/release/ticketing-app-1");
+    let rel = Path::new("target/release").join(RELEASE_BIN_NAME);
+    let src = Path::new(repo_dir).join(&rel);
     if !src.is_file() {
-        return Err("release binary missing: target/release/ticketing-app-1".into());
+        return Err(format!("release binary missing: {}", rel.display()));
     }
     std::fs::copy(&src, bin_path).map_err(|e| format!("install binary failed: {e}"))?;
     Ok(())
