@@ -44,5 +44,16 @@ After generating the certificates:
 2. Update your `.env` file with the certificate paths if required.
 3. Start the server.
 
-Further deployment and configuration instructions will be added as the project evolves.
+## systemd (Pi)
+
+Example units live in `systemd/`. Copy them to `/etc/systemd/system/`, edit `WorkingDirectory` / `ExecStart` / `EnvironmentFile` to the Pi paths, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now lyra opencode
+```
+
+`LYRA_SERVICE_NAME=lyra` in `.env` must match the Lyra unit name. Secrets stay in `.env`, not in the unit files. See `systemd/README.md`.
+
+iOS API: `CONTRACT.md`. Pi tests: `scripts/pi-ci.sh`.
 

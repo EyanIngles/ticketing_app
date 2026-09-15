@@ -1,0 +1,21 @@
+# Example unit. Copy to /etc/systemd/system/lyra.service and set
+# WorkingDirectory, ExecStart, and EnvironmentFile to the Pi paths.
+# Do not put secrets, hostnames, or cert contents in this file.
+#
+# LYRA_SERVICE_NAME=lyra in .env must match this unit name so deploy
+# can `systemctl restart lyra`.
+
+[Unit]
+Description=Lyra API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=on-failure
+EnvironmentFile=/opt/lyra/.env
+WorkingDirectory=/opt/lyra/ticketing-app-1
+ExecStart=/opt/lyra/ticketing-app-1/target/release/ticketing-app-1
+
+[Install]
+WantedBy=multi-user.target
