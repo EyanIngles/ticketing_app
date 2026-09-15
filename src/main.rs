@@ -1,6 +1,7 @@
 mod auth;
 mod constants;
 mod db;
+mod deploy;
 mod jwt;
 mod mcp;
 mod migrate;
@@ -60,6 +61,10 @@ async fn main() {
         .route(
             "/tickets/:ticket_id/actions/request_pr",
             post(tickets::request_pr),
+        )
+        .route(
+            "/tickets/:ticket_id/actions/deploy",
+            post(tickets::deploy_ticket),
         )
         .route(
             "/tickets/:ticket_id/actions/close",

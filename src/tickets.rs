@@ -1,4 +1,4 @@
-use crate::auth::require_claim;
+use crate::auth::{AuthError, require_claim, require_human};
 use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode};
 use axum::{extract::State, response::Json};
@@ -245,6 +245,52 @@ pub async fn add_comment(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(comment_from_row(&record)))
+}
+
+pub async fn deploy_ticket(
+    State(pool): State<Arc<SqlitePool>>,
+    Path(ticket_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<Ticket>, (StatusCode, Json<AuthError>)> {
+    require_human(&headers)?;
+    let row = sqlx::query(
+        r#"SELECT "id", "name", "description", "project_id", "status", "github_pr_url", "last_model"
+           FROM tickets WHERE "id" = $1"#,
+    )
+    .bind(ticket_id)
+    .fetch_optional(&*pool)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(AuthError {
+                error: "server_error".into(),
+            }),
+        )
+    })?;
+    let Some(row) = row else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(AuthError {
+                error: "not_found".into(),
+            }),
+        ));
+    };
+    let comments = comments_for_ticket(&pool, ticket_id).await;
+    let ticket = ticket_from_row(&row, comments);
+    if !ticket.status.eq_ignore_ascii_case("pending_review") {
+        return Err((
+            StatusCode::CONFLICT,
+            Json(AuthError {
+                error: "not_ready".into(),
+            }),
+        ));
+    }
+    let pool_spawn = pool.clone();
+    tokio::spawn(async move {
+        crate::deploy::run_deploy(&pool_spawn, ticket_id).await;
+    });
+    Ok(Json(ticket))
 }
 
 pub async fn request_pr(

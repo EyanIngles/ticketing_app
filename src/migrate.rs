@@ -20,6 +20,10 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
 
 pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let applied = current_schema_migration_version(pool).await;
+    println!(
+        "schema_migration_version: {}",
+        applied.as_deref().unwrap_or("none")
+    );
 
     for (version, up_sql, down_sql) in MIGRATIONS {
         if applied.as_deref() >= Some(*version) {
