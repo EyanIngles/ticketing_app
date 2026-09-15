@@ -45,6 +45,7 @@ GH_TOKEN=""
 # Deploy from a merged PR (iOS POST /tickets/:id/actions/deploy). Empty = skip.
 LYRA_REPO_DIR=""
 LYRA_BIN_PATH=""
+# Must match the systemd unit name (lyra).
 LYRA_SERVICE_NAME=""
 LYRA_DEPLOY_GIT_REMOTE=""
 LYRA_DEPLOY_GIT_REF=""

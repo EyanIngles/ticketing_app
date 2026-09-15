@@ -1,0 +1,21 @@
+# Example unit. Copy to /etc/systemd/system/opencode.service and set
+# WorkingDirectory, ExecStart, and EnvironmentFile to the Pi paths.
+# Do not put secrets in this file.
+#
+# Bind localhost only (127.0.0.1:4096). Do not use 0.0.0.0 or --mdns.
+# OpenCode CLI: `opencode serve --hostname 127.0.0.1 --port 4096`
+
+[Unit]
+Description=OpenCode serve (localhost only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=on-failure
+EnvironmentFile=/opt/lyra/.env
+WorkingDirectory=/opt/lyra/ticketing-app-1
+ExecStart=/usr/bin/opencode serve --hostname 127.0.0.1 --port 4096
+
+[Install]
+WantedBy=multi-user.target
