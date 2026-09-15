@@ -11,6 +11,11 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
         include_str!("../sql/migrations/002_up.sql"),
         include_str!("../sql/migrations/002_down.sql"),
     ),
+    (
+        "003",
+        include_str!("../sql/migrations/003_up.sql"),
+        include_str!("../sql/migrations/003_down.sql"),
+    ),
 ];
 
 pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
@@ -147,7 +152,7 @@ mod tests {
         run_migrations(&pool).await.unwrap();
         run_migrations(&pool).await.unwrap();
 
-        assert_schema_version(&pool, "002").await;
+        assert_schema_version(&pool, "003").await;
 
         let status_cols: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM pragma_table_info('tickets') WHERE name = 'status'",
@@ -183,7 +188,7 @@ mod tests {
 
         run_migrations(&pool).await.unwrap();
 
-        assert_schema_version(&pool, "002").await;
+        assert_schema_version(&pool, "003").await;
 
         let created_at: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'created_at'",
@@ -285,7 +290,7 @@ mod tests {
 
         run_migrations(&pool).await.unwrap();
 
-        assert_schema_version(&pool, "002").await;
+        assert_schema_version(&pool, "003").await;
 
         let tables: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('permission_requests', 'oauth_clients', 'oauth_codes', 'refresh_tokens', 'request_logs')",
@@ -295,6 +300,9 @@ mod tests {
         .unwrap();
         assert_eq!(tables, 5);
 
+        exec_sql(&pool, include_str!("../sql/migrations/003_down.sql"), true)
+            .await
+            .unwrap();
         exec_sql(&pool, include_str!("../sql/migrations/002_down.sql"), true)
             .await
             .unwrap();
@@ -308,5 +316,48 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(tables, 0);
+    }
+
+    #[tokio::test]
+    async fn applies_003_and_down_restores_002() {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        seed_live_schema(&pool).await;
+
+        run_migrations(&pool).await.unwrap();
+
+        assert_schema_version(&pool, "003").await;
+
+        let is_used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('permission_requests') WHERE name = 'is_used'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(is_used, 1);
+
+        exec_sql(&pool, include_str!("../sql/migrations/003_down.sql"), true)
+            .await
+            .unwrap();
+
+        assert_schema_version(&pool, "002").await;
+
+        let is_used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('permission_requests') WHERE name = 'is_used'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(is_used, 0);
+
+        let tables: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'permission_requests'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(tables, 1);
     }
 }

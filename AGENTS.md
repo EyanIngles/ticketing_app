@@ -18,7 +18,13 @@ Credentials live in the Pi `.env` and gitignored `agent.env`:
 
 `POST /mcp` with `Authorization: Bearer <LYRA_AGENT_TOKEN>` and `X-Lyra-User: <LYRA_AGENT_USER>`.
 
-Tools: `lyra_get_ticket`, `lyra_add_comment`, `lyra_request_permission` (any agent); `lyra_set_status`, `lyra_update_pr_url` (Engineer). `lyra_update_pr_url` overwrites an existing PR URL. Use `lyra_request_permission` when a tool needs human approval.
+Tools:
+
+- `lyra_get_ticket`, `lyra_add_comment`: any agent, no human permission.
+- `lyra_request_permission`: any agent, only for tools that must pause for the human (not comments).
+- `lyra_set_status`, `lyra_update_pr_url`: Engineer only.
+
+`lyra_update_pr_url` overwrites an existing PR URL.
 
 ## Rules
 
