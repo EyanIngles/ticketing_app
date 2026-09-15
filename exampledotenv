@@ -41,3 +41,10 @@ LYRA_AGENT_DEFAULT_MODEL=""
 
 # Agent GitHub CLI on the Pi only (separate GitHub user, not your personal account).
 GH_TOKEN=""
+
+# Deploy from a merged PR (iOS POST /tickets/:id/actions/deploy). Empty = skip.
+LYRA_REPO_DIR=""
+LYRA_BIN_PATH=""
+LYRA_SERVICE_NAME=""
+LYRA_DEPLOY_GIT_REMOTE=""
+LYRA_DEPLOY_GIT_REF=""
