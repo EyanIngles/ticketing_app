@@ -1,56 +1,11 @@
+use crate::api::{self, Project, Ticket};
 use crate::router::RouteView;
+use super::permissions::PendingPermissions;
 use dioxus::prelude::*;
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct Comments {
-    pub id: i64,
-    pub text: String,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct Ticket {
-    pub id: i64,
-    pub name: String,
-    pub description: String,
-    pub project_id: i64,
-    #[serde(default)]
-    pub comments: Vec<Comments>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct Project {
-    pub id: i32,
-    pub name: String,
-    pub description: String,
-    #[serde(default)]
-    pub tickets: Vec<Ticket>,
-}
 
 async fn get_projects() -> Result<Vec<Project>, String> {
-    let client = reqwest::Client::new();
-
-    let response = client
-        .get("https://pi.tailcb4684.ts.net:3000/projects")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut projects = response
-        .json::<Vec<Project>>()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let ticket_reponse = client
-        .get("https://pi.tailcb4684.ts.net:3000/tickets")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let all_tickets = ticket_reponse
-        .json::<Vec<Ticket>>()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut projects = api::get_json::<Vec<Project>>("/projects").await?;
+    let all_tickets = api::get_json::<Vec<Ticket>>("/tickets").await?;
 
     for project in projects.iter_mut() {
         project.tickets = all_tickets
@@ -90,7 +45,12 @@ fn ProjectList(preview: bool) -> Element {
                                 span { class: "status-badge", "{project.tickets.len()} Tickets" }
                                 ul { class: "card-list",
                                     for ticket in project.tickets.iter().take(4) {
-                                        li { key: "{ticket.id}", "{ticket.name}" }
+                                        li { key: "{ticket.id}",
+                                            "{ticket.name}"
+                                            if !ticket.status.is_empty() {
+                                                " · {ticket.status}"
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -117,6 +77,7 @@ pub fn Projects() -> Element {
                 p { class: "page-subtitle", "Open a project to view its tickets and comments." }
             }
             ProjectList { preview: false }
+            PendingPermissions { ticket_id: None }
         }
     }
 }

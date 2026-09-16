@@ -1,55 +1,71 @@
+use crate::api::{self, oauth_client_id};
 use crate::pages::MAIN_CSS;
 use crate::router::RouteView;
 use crate::states::IS_LOGGED_IN;
 use dioxus::prelude::*;
-use gloo_storage::{LocalStorage, Storage};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Debug)]
-struct LoginRequest {
-    email: String,
+#[derive(Serialize)]
+struct AuthorizeRequest {
+    username: String,
     password: String,
+    client_id: String,
+    code_challenge: String,
+    code_challenge_method: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-struct _User {
-    email: String,
+#[derive(Deserialize)]
+struct AuthorizeResponse {
+    code: String,
 }
 
-pub fn _set_jwt(jwt_key: String, bear_token: String) {
-    LocalStorage::set(jwt_key, bear_token).unwrap();
-}
-pub fn _del_jwt(jwt_key: String) {
-    LocalStorage::delete(jwt_key);
-}
-
-pub fn _get_jwt() -> String {
-    LocalStorage::get("JWT").unwrap()
+#[derive(Serialize)]
+struct TokenRequest {
+    grant_type: String,
+    client_id: String,
+    code: String,
+    code_verifier: String,
 }
 
-async fn login_attempt(email: String, password: String) -> Result<(), String> {
-    let local_storage = LocalStorage::length();
-    if local_storage == 0 {
-        _set_jwt("JWT".to_string(), "length was set to 0 ".to_string());
-    } else {
-        _del_jwt("JWT".to_string());
+#[derive(Deserialize)]
+struct TokenResponse {
+    access_token: String,
+}
+
+async fn login_attempt(username: String, password: String) -> Result<(), String> {
+    let _base = api::api_base()?;
+    api::clear_jwt_token();
+    let (code_verifier, code_challenge) = api::pkce_s256_pair()?;
+    let client_id = oauth_client_id().to_string();
+
+    let authorize: AuthorizeResponse = api::post_json(
+        "/oauth/authorize",
+        &AuthorizeRequest {
+            username,
+            password,
+            client_id: client_id.clone(),
+            code_challenge,
+            code_challenge_method: "S256".into(),
+        },
+    )
+    .await?;
+
+    let token: TokenResponse = api::post_json(
+        "/oauth/token",
+        &TokenRequest {
+            grant_type: "authorization_code".into(),
+            client_id,
+            code: authorize.code,
+            code_verifier,
+        },
+    )
+    .await?;
+
+    if token.access_token.trim().is_empty() {
+        return Err("missing access_token".into());
     }
-
-    let client = reqwest::Client::new();
-    let payload = LoginRequest { email, password };
-
-    let response = client
-        .post("https://pi.tailcb4684.ts.net:3000/login")
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if response.status() == 302 {
-        Ok(())
-    } else {
-        Err(format!("Login failed with status: {}", response.status()))
-    }
+    api::set_jwt_token(&token.access_token);
+    Ok(())
 }
 
 #[component]
@@ -57,7 +73,7 @@ pub fn Login() -> Element {
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
     let mut is_loading = use_signal(|| false);
-    let mut error = use_signal(|| Option::<String>::None);
+    let mut error = use_signal(|| api::api_base().err());
     let nav = navigator();
 
     let mut submit = move |_| {
@@ -108,7 +124,7 @@ pub fn Login() -> Element {
                         input {
                             class: "input-field",
                             r#type: "text",
-                            placeholder: "Username or email",
+                            placeholder: "Username",
                             value: "{username}",
                             oninput: move |e| username.set(e.value()),
                             disabled: is_loading(),
