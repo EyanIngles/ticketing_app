@@ -1,5 +1,19 @@
 # Development
 
+Talk to Lyra on the Pi over Tailscale HTTPS. Set the API origin at **compile time** (never baked into source):
+
+```bash
+LYRA_API_BASE=https://YOUR_PI_HOST dx serve
+```
+
+Optional OAuth client (defaults to `lyra-ios`):
+
+```bash
+LYRA_API_BASE=https://YOUR_PI_HOST LYRA_OAUTH_CLIENT_ID=lyra-ios dx serve
+```
+
+If `LYRA_API_BASE` is unset, the login page shows a runtime error. Do not hardcode a hostname.
+
 Your new bare-bones project includes minimal organization with a single `main.rs` file and a few assets.
 
 ```
