@@ -14,8 +14,8 @@ Wants=network-online.target
 Type=simple
 Restart=on-failure
 EnvironmentFile=/opt/lyra/.env
-WorkingDirectory=/opt/lyra/ticketing-app-1
-ExecStart=/opt/lyra/ticketing-app-1/target/release/ticketing-app-1
+WorkingDirectory=/opt/lyra/lyra-server
+ExecStart=/opt/lyra/lyra-server/target/release/lyra-server
 
 [Install]
 WantedBy=multi-user.target

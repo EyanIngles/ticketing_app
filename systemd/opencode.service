@@ -14,7 +14,7 @@ Wants=network-online.target
 Type=simple
 Restart=on-failure
 EnvironmentFile=/opt/lyra/.env
-WorkingDirectory=/opt/lyra/ticketing-app-1
+WorkingDirectory=/opt/lyra/lyra-server
 ExecStart=/usr/bin/opencode serve --hostname 127.0.0.1 --port 4096
 
 [Install]
