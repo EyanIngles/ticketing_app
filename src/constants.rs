@@ -14,7 +14,7 @@ pub const PERMISSION_PENDING: &str = "pending";
 pub const PERMISSION_APPROVED: &str = "approved";
 pub const PERMISSION_DENIED: &str = "denied";
 
-pub const RELEASE_BIN_NAME: &str = "ticketing-app-1";
+pub const RELEASE_BIN_NAME: &str = "lyra-server";
 
 pub const OPENCODE_DISPATCH_PROMPT: &str = "\
 You are {agent_name}, role {agent_role} (type Agent).
