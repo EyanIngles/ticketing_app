@@ -70,6 +70,10 @@ async fn main() {
             "/tickets/:ticket_id/actions/close",
             post(tickets::close_ticket),
         )
+        .route(
+            "/tickets/:ticket_id/actions/set_status",
+            post(tickets::set_status),
+        )
         .route("/login", post(user_login))
         .route("/oauth/authorize", post(auth::oauth_authorize))
         .route("/oauth/token", post(auth::oauth_token))
