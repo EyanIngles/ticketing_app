@@ -1,6 +1,6 @@
 # iOS ↔ Lyra API
 
-Lyra on the Pi is the only API iOS talks to (Tailscale HTTPS). Lyra is the authorization server, not GitHub. JSON bodies. All iOS 4xx/5xx are JSON `{ "error": "..." }` (examples: `invalid_token`, `not_human`, `not_ready`, `already_decided`, `not_found`, `empty_text`, `server_error`).
+Lyra on the Pi is the only API iOS talks to (Tailscale HTTPS). Lyra is the authorization server, not GitHub. JSON bodies. All iOS 4xx/5xx are JSON `{ "error": "..." }` (examples: `invalid_token`, `not_human`, `not_ready`, `already_decided`, `not_found`, `empty_text`, `invalid_status`, `server_error`).
 
 `POST /login` (302) is legacy web, not iOS.
 
@@ -38,7 +38,7 @@ iOS should **always send Bearer**, including on open GETs.
 | --- | --- |
 | Open (no JWT required) | `GET /tickets`, `GET /tickets/:id`, `GET /projects` |
 | Any JWT | `POST /tickets`, `POST /tickets/:id/comments`, `POST /tickets/:id/actions/request_pr`, `POST /tickets/:id/actions/close`, `GET /current_user` |
-| Human only (`type=Human`) | `POST /tickets/:id/actions/deploy`, `GET /permissions`, `POST /permissions/:id/approve`, `POST /permissions/:id/deny` |
+| Human only (`type=Human`) | `POST /tickets/:id/actions/deploy`, `POST /tickets/:id/actions/set_status`, `GET /permissions`, `POST /permissions/:id/approve`, `POST /permissions/:id/deny` |
 
 No/invalid JWT on a locked route → 401 `{ "error": "invalid_token" }`. Non-human on Human-only → 403 `{ "error": "not_human" }`.
 
@@ -51,6 +51,7 @@ No/invalid JWT on a locked route → 401 `{ "error": "invalid_token" }`. Non-hum
 | Markdown discuss | `POST /tickets/:id/comments` `{ "text" }` |
 | Ask for PR | `POST /tickets/:id/actions/request_pr` |
 | Close after merge | `POST /tickets/:id/actions/close` |
+| Set status | `POST /tickets/:id/actions/set_status` `{ "status" }` |
 | Deploy | `POST /tickets/:id/actions/deploy` |
 
 Ticket: `id`, `name`, `description`, `project_id`, `status`, `github_pr_url`, `last_model`, `comments[]`.
@@ -59,13 +60,15 @@ Ticket: `id`, `name`, `description`, `project_id`, `status`, `github_pr_url`, `l
 
 Comment: `id`, `text`, `author_name`, `author_type`, `author_role`, `model`, `format` (`markdown`), `display` (`Name:Model` for agents with a model, otherwise just name).
 
-Statuses are a happy-path chain, not a client state machine: `queued` → `running` → `awaiting_you` → `pr_opening` → `pending_review` → `closed` \| `failed`. Deploy skip stays `pending_review`. OpenCode can jump to `failed`.
+Statuses are a happy-path chain, not a client state machine: `queued` → `running` → `awaiting_you` → `pr_opening` → `pending_review` → `closed` \| `failed`. Humans may also set `open` or `cancelled`. Deploy skip stays `pending_review`. OpenCode can jump to `failed`.
 
 New tickets start `queued`. OpenCode dispatch may set `running` (skipped if `OPENCODE_BASE_URL` is unset). Dispatch failure → `failed` + system comment.
 
 `POST /tickets` requires `project_id` and any JWT.
 
 `request_pr` / `close` require JWT (any type) and return the ticket (`pr_opening` / `closed`). Missing ticket → 404 `{ "error": "not_found" }`. SQL failure → 500 `{ "error": "server_error" }`.
+
+`POST /tickets/:id/actions/set_status` is Human JWT only (`type=Human`). Body `{ "status": "open" }`. Allowed statuses: `open`, `awaiting_you`, `pending_review`, `closed`, `failed`, `cancelled`. Agentic statuses `queued`, `running`, `pr_opening` and unknown values → 400 `{ "error": "invalid_status" }`. Non-human → 403 `{ "error": "not_human" }`. Missing ticket → 404 `{ "error": "not_found" }`. Returns the ticket.
 
 `GET /tickets/:id` missing → 404 `{ "error": "not_found" }`. SQL failure → 500 `{ "error": "server_error" }`.
 

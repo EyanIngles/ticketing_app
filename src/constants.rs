@@ -6,6 +6,8 @@ pub const TICKET_STATUSES: &[&str] = &[
     "pending_review",
     "closed",
     "failed",
+    "open",
+    "cancelled",
 ];
 
 pub const ROLE_ENGINEER: &str = "Engineer";

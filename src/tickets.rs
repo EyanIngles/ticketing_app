@@ -56,6 +56,20 @@ pub struct Comment {
 pub struct CommentCreate {
     pub text: String,
 }
+
+#[derive(Deserialize, Debug)]
+pub struct SetStatusRequest {
+    pub status: String,
+}
+
+const HUMAN_TICKET_STATUSES: &[&str] = &[
+    "open",
+    "awaiting_you",
+    "pending_review",
+    "closed",
+    "failed",
+    "cancelled",
+];
 #[derive(Deserialize, Serialize, Debug)]
 pub struct User {
     pub id: i32,
@@ -319,6 +333,28 @@ pub async fn close_ticket(
 ) -> Result<Json<Ticket>, (StatusCode, Json<AuthError>)> {
     require_claim(&headers)?;
     set_ticket_status(&pool, ticket_id, "closed").await
+}
+
+pub async fn set_status(
+    State(pool): State<Arc<SqlitePool>>,
+    Path(ticket_id): Path<i64>,
+    headers: HeaderMap,
+    Json(payload): Json<SetStatusRequest>,
+) -> Result<Json<Ticket>, (StatusCode, Json<AuthError>)> {
+    require_human(&headers)?;
+    let status = HUMAN_TICKET_STATUSES
+        .iter()
+        .copied()
+        .find(|allowed| payload.status.eq_ignore_ascii_case(allowed))
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(AuthError {
+                    error: "invalid_status".into(),
+                }),
+            )
+        })?;
+    set_ticket_status(&pool, ticket_id, status).await
 }
 
 async fn set_ticket_status(
@@ -617,6 +653,91 @@ mod tests {
         .unwrap();
         assert_eq!(err.0, StatusCode::UNAUTHORIZED);
         assert_eq!(err.1.0.error, "invalid_token");
+    }
+
+    #[tokio::test]
+    async fn human_can_set_open_status() {
+        let pool = setup_pool().await;
+        let ticket = create_ticket(
+            State(Arc::new(pool.clone())),
+            human_headers(),
+            Json(TicketCreate {
+                name: "Task".into(),
+                description: "Do the thing".into(),
+                project_id: 1,
+            }),
+        )
+        .await
+        .unwrap();
+        let got = set_status(
+            State(Arc::new(pool)),
+            Path(ticket.id),
+            human_headers(),
+            Json(SetStatusRequest {
+                status: "open".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(got.status, "open");
+    }
+
+    #[tokio::test]
+    async fn set_status_agent_jwt_is_forbidden() {
+        let pool = setup_pool().await;
+        let ticket = create_ticket(
+            State(Arc::new(pool.clone())),
+            human_headers(),
+            Json(TicketCreate {
+                name: "Task".into(),
+                description: "Do the thing".into(),
+                project_id: 1,
+            }),
+        )
+        .await
+        .unwrap();
+        let err = set_status(
+            State(Arc::new(pool)),
+            Path(ticket.id),
+            jwt_headers("Agent", "Engineer"),
+            Json(SetStatusRequest {
+                status: "open".into(),
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
+        assert_eq!(err.1.0.error, "not_human");
+    }
+
+    #[tokio::test]
+    async fn set_status_queued_is_invalid() {
+        let pool = setup_pool().await;
+        let ticket = create_ticket(
+            State(Arc::new(pool.clone())),
+            human_headers(),
+            Json(TicketCreate {
+                name: "Task".into(),
+                description: "Do the thing".into(),
+                project_id: 1,
+            }),
+        )
+        .await
+        .unwrap();
+        let err = set_status(
+            State(Arc::new(pool)),
+            Path(ticket.id),
+            human_headers(),
+            Json(SetStatusRequest {
+                status: "queued".into(),
+            }),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert_eq!(err.1.0.error, "invalid_status");
     }
 
     #[tokio::test]
