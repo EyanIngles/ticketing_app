@@ -278,6 +278,29 @@ pub async fn add_comment(
     Ok(Json(comment_from_row(&record)))
 }
 
+pub async fn delete_comment(
+    State(pool): State<Arc<SqlitePool>>,
+    Path((ticket_id, comment_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+) -> Result<StatusCode, (StatusCode, Json<AuthError>)> {
+    require_claim(&headers)?;
+    let result = sqlx::query(r#"DELETE FROM comments WHERE "ticket_id" = $1 AND "id" = $2"#)
+        .bind(ticket_id)
+        .bind(comment_id)
+        .execute(&*pool)
+        .await
+        .map_err(|_| server_error())?;
+    if result.rows_affected() == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(AuthError {
+                error: "not_found".into(),
+            }),
+        ));
+    }
+    Ok(StatusCode::OK)
+}
+
 pub async fn deploy_ticket(
     State(pool): State<Arc<SqlitePool>>,
     Path(ticket_id): Path<i64>,
@@ -413,46 +436,24 @@ pub async fn get_user_details(
 
 pub async fn delete_ticket(
     State(pool): State<Arc<SqlitePool>>,
-    Path(ticket_id): Path<i32>,
-) -> bool {
-    println!("Running comment checker here....");
-    let exist = query(
-        "SELECT EXISTS(
-    SELECT 1 FROM comments WHERE ticket_id = ($1)
-)",
-    )
-    .bind(ticket_id.clone())
-    .fetch_one(&*pool)
-    .await;
-
-    let has_comments: bool = match exist {
-        Ok(row) => row.get(0),
-        Err(_) => false,
-    };
-
-    if has_comments {
-        println!("Has comments attached to this ticket....");
-    } else {
-        println!("this ticket has no comments attached...");
+    Path(ticket_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<StatusCode, (StatusCode, Json<AuthError>)> {
+    require_human(&headers)?;
+    let result = sqlx::query(r#"DELETE FROM tickets WHERE "id" = $1"#)
+        .bind(ticket_id)
+        .execute(&*pool)
+        .await
+        .map_err(|_| server_error())?;
+    if result.rows_affected() == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(AuthError {
+                error: "not_found".into(),
+            }),
+        ));
     }
-    let query_data = format!("DELETE FROM tickets WHERE id = {:?}", ticket_id.to_string());
-    let result = sqlx::query(query_data.as_str()).execute(&*pool).await;
-    match result {
-        Ok(res) => {
-            println!(
-                "ticket successfully deleted - Ticket No: {:?} - response: {:?}",
-                ticket_id, res
-            );
-            true
-        }
-        Err(e) => {
-            println!(
-                "Err: Unable to perform 'delete_ticket' function - Err: {:?}",
-                e
-            );
-            false
-        }
-    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
@@ -523,6 +524,17 @@ mod tests {
 
     fn human_headers() -> HeaderMap {
         jwt_headers("Human", "Owner")
+    }
+
+    async fn insert_ticket(pool: &SqlitePool, name: &str) -> i64 {
+        sqlx::query_scalar(
+            r#"INSERT INTO tickets ("name", "description", "project_id", "status")
+               VALUES ($1, 'Do the thing', 1, 'queued') RETURNING "id""#,
+        )
+        .bind(name)
+        .fetch_one(pool)
+        .await
+        .unwrap()
     }
 
     #[tokio::test]
@@ -653,6 +665,104 @@ mod tests {
         .unwrap();
         assert_eq!(err.0, StatusCode::UNAUTHORIZED);
         assert_eq!(err.1.0.error, "invalid_token");
+    }
+
+    #[tokio::test]
+    async fn delete_comment_without_token_is_unauthorized() {
+        let pool = setup_pool().await;
+        let err = delete_comment(State(Arc::new(pool)), Path((1, 1)), HeaderMap::new())
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1.error, "invalid_token");
+    }
+
+    #[tokio::test]
+    async fn delete_comment_requires_matching_ticket_id() {
+        let pool = setup_pool().await;
+        let ticket_id = insert_ticket(&pool, "First").await;
+        let other_ticket_id = insert_ticket(&pool, "Second").await;
+        let comment_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO comments ("ticket_id", "text") VALUES ($1, 'hello') RETURNING "id""#,
+        )
+        .bind(ticket_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let err = delete_comment(
+            State(Arc::new(pool.clone())),
+            Path((other_ticket_id, comment_id)),
+            human_headers(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.0, StatusCode::NOT_FOUND);
+        assert_eq!(err.1.error, "not_found");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM comments WHERE id = $1")
+            .bind(comment_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn agent_jwt_can_delete_comment() {
+        let pool = setup_pool().await;
+        let ticket_id = insert_ticket(&pool, "Task").await;
+        let comment_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO comments ("ticket_id", "text") VALUES ($1, 'hello') RETURNING "id""#,
+        )
+        .bind(ticket_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let status = delete_comment(
+            State(Arc::new(pool)),
+            Path((ticket_id, comment_id)),
+            jwt_headers("Agent", "Engineer"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn delete_ticket_without_token_is_unauthorized() {
+        let pool = setup_pool().await;
+        let ticket_id = insert_ticket(&pool, "Task").await;
+        let err = delete_ticket(State(Arc::new(pool)), Path(ticket_id), HeaderMap::new())
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1.error, "invalid_token");
+    }
+
+    #[tokio::test]
+    async fn delete_ticket_with_agent_jwt_is_forbidden() {
+        let pool = setup_pool().await;
+        let ticket_id = insert_ticket(&pool, "Task").await;
+        let err = delete_ticket(
+            State(Arc::new(pool)),
+            Path(ticket_id),
+            jwt_headers("Agent", "Engineer"),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
+        assert_eq!(err.1.error, "not_human");
+    }
+
+    #[tokio::test]
+    async fn delete_ticket_missing_is_not_found() {
+        let pool = setup_pool().await;
+        let err = delete_ticket(State(Arc::new(pool)), Path(999), human_headers())
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, StatusCode::NOT_FOUND);
+        assert_eq!(err.1.error, "not_found");
     }
 
     #[tokio::test]
