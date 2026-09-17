@@ -11,17 +11,16 @@ mod projects;
 mod request_log;
 mod seed;
 mod tickets;
-use projects::{CreateProject, Project};
+use projects::Project;
 
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::State,
     http::{HeaderMap, StatusCode},
     middleware,
     response::Json,
     routing::{delete, get, post, put},
 };
-use axum_macros::{debug_handler, debug_middleware};
 use axum_server::tls_rustls::RustlsConfig;
 use dotenv::dotenv;
 use sqlx::SqlitePool;
@@ -50,12 +49,12 @@ async fn main() {
 
     let app = Router::new()
         .route("/projects", get(fetch_projects))
-        .route("/projects", post(create_project))
+        .route("/projects", post(projects::create_project))
         .route("/tickets", get(get_all_tickets))
         .route("/tickets", post(create_ticket))
         .route(
             "/tickets/:ticket_id",
-            get(tickets::get_ticket).delete(delete_ticket),
+            get(tickets::get_ticket).delete(tickets::delete_ticket),
         )
         .route("/tickets/:ticket_id/comments", post(tickets::add_comment))
         .route(
@@ -87,7 +86,7 @@ async fn main() {
         .route("/permissions/:id/deny", post(permissions::deny_permission))
         .route(
             "/tickets/:ticket_id/comments/:comment_id",
-            delete(delete_comment),
+            delete(tickets::delete_comment),
         )
         .fallback_service(ServeFile::new(
             "../lyra-frontend/target/dx/lyra-frontend/release/web/public/index.html",
@@ -133,15 +132,6 @@ async fn fetch_projects(State(pool): State<Arc<SqlitePool>>) -> Json<Vec<Project
     let projects = projects::fetch_projects(State(pool)).await;
     Json(projects)
 }
-#[debug_handler]
-async fn create_project(
-    State(pool): State<Arc<SqlitePool>>,
-    Json(payload): Json<CreateProject>,
-) -> StatusCode {
-    let project = projects::create_project(State(pool), Json(payload)).await;
-    project
-}
-
 async fn _encrypt_password_for_storage(_password: String) -> String {
     "hi".to_string()
 }
@@ -171,33 +161,4 @@ async fn create_ticket(
 ) -> Result<Json<Ticket>, (StatusCode, Json<auth::AuthError>)> {
     let ticket = tickets::create_ticket(State(pool), headers, Json(payload)).await?;
     Ok(Json(ticket))
-}
-
-async fn delete_ticket(
-    State(pool): State<Arc<SqlitePool>>,
-    Path(ticket_id): Path<i32>,
-) -> StatusCode {
-    let ticket = tickets::delete_ticket(State(pool), Path(ticket_id)).await;
-    match ticket {
-        true => StatusCode::NO_CONTENT,
-        false => StatusCode::NOT_FOUND,
-    }
-}
-
-async fn delete_comment(
-    Path((_tickket_id, comment_id)): Path<(i32, i32)>,
-    State(pool): State<Arc<SqlitePool>>,
-) -> StatusCode {
-    println!(
-        "Delete comment function has beenr recieved.. waiting on completion. ..please wait..."
-    );
-    let result = sqlx::query("DELETE FROM comments WHERE id = ($1)")
-        .bind(comment_id)
-        .execute(&*pool)
-        .await;
-
-    match result {
-        Ok(_) => StatusCode::OK,
-        Err(_) => StatusCode::NOT_FOUND,
-    }
 }

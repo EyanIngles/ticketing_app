@@ -37,10 +37,12 @@ iOS should **always send Bearer**, including on open GETs.
 | JWT | Endpoints |
 | --- | --- |
 | Open (no JWT required) | `GET /tickets`, `GET /tickets/:id`, `GET /projects` |
-| Any JWT | `POST /tickets`, `POST /tickets/:id/comments`, `POST /tickets/:id/actions/request_pr`, `POST /tickets/:id/actions/close`, `GET /current_user` |
-| Human only (`type=Human`) | `POST /tickets/:id/actions/deploy`, `POST /tickets/:id/actions/set_status`, `GET /permissions`, `POST /permissions/:id/approve`, `POST /permissions/:id/deny` |
+| Any JWT | `POST /tickets`, `POST /tickets/:id/comments`, `DELETE /tickets/:ticket_id/comments/:comment_id`, `POST /tickets/:id/actions/request_pr`, `POST /tickets/:id/actions/close`, `GET /current_user` |
+| Human only (`type=Human`) | `POST /projects`, `DELETE /tickets/:id`, `POST /tickets/:id/actions/deploy`, `POST /tickets/:id/actions/set_status`, `GET /permissions`, `POST /permissions/:id/approve`, `POST /permissions/:id/deny` |
 
 No/invalid JWT on a locked route → 401 `{ "error": "invalid_token" }`. Non-human on Human-only → 403 `{ "error": "not_human" }`.
+
+There are no unauthenticated product-data mutators. The unauthenticated `POST /login`, `POST /oauth/authorize`, and `POST /oauth/token` routes are login/token flows, not product-data writes.
 
 ## Tickets
 
@@ -49,6 +51,7 @@ No/invalid JWT on a locked route → 401 `{ "error": "invalid_token" }`. Non-hum
 | List / detail | `GET /tickets`, `GET /tickets/:id` |
 | Submit task | `POST /tickets` `{ "name", "description", "project_id" }` |
 | Markdown discuss | `POST /tickets/:id/comments` `{ "text" }` |
+| Delete comment | `DELETE /tickets/:ticket_id/comments/:comment_id` |
 | Ask for PR | `POST /tickets/:id/actions/request_pr` |
 | Close after merge | `POST /tickets/:id/actions/close` |
 | Set status | `POST /tickets/:id/actions/set_status` `{ "status" }` |
@@ -66,13 +69,21 @@ New tickets start `queued`. OpenCode dispatch may set `running` (skipped if `OPE
 
 `POST /tickets` requires `project_id` and any JWT.
 
+`DELETE /tickets/:id` is Human JWT only. Missing ticket → 404 `{ "error": "not_found" }`.
+
 `request_pr` / `close` require JWT (any type) and return the ticket (`pr_opening` / `closed`). Missing ticket → 404 `{ "error": "not_found" }`. SQL failure → 500 `{ "error": "server_error" }`.
 
 `POST /tickets/:id/actions/set_status` is Human JWT only (`type=Human`). Body `{ "status": "open" }`. Allowed statuses: `open`, `awaiting_you`, `pending_review`, `closed`, `failed`, `cancelled`. Agentic statuses `queued`, `running`, `pr_opening` and unknown values → 400 `{ "error": "invalid_status" }`. Non-human → 403 `{ "error": "not_human" }`. Missing ticket → 404 `{ "error": "not_found" }`. Returns the ticket.
 
+Status write domains are intentionally separate. The Human HTTP `set_status` route is limited to its allowlist above. The Engineer-only MCP `lyra_set_status` tool may write the full agentic status set: `queued`, `running`, `awaiting_you`, `pr_opening`, `pending_review`, `closed`, `failed`, `open`, `cancelled`. The authenticated `request_pr` and `close` actions write only `pr_opening` and `closed`, respectively.
+
+Setting `cancelled` or `open` changes only the stored status. `cancelled` does not stop OpenCode or an in-flight deploy, and `open` does not re-dispatch work.
+
 `GET /tickets/:id` missing → 404 `{ "error": "not_found" }`. SQL failure → 500 `{ "error": "server_error" }`.
 
 Comments require JWT (any type) and stamp the JWT author; `format` is `markdown`. Empty/whitespace `text` → 400 `{ "error": "empty_text" }`. SQL failure → 500 `{ "error": "server_error" }`.
+
+`DELETE /tickets/:ticket_id/comments/:comment_id` requires any JWT and deletes only when both IDs match the same row. A missing or mismatched comment → 404 `{ "error": "not_found" }`.
 
 ### Poll loop
 
@@ -80,7 +91,7 @@ After submit, permission ask, or deploy, iOS polls `GET /tickets/:id` and `GET /
 
 ### Projects
 
-`GET /projects` → `{ id, name, description }` (tickets array may be empty). `POST /tickets` requires `project_id`. iOS may pick an id from the list or hardcode if only one project is on the Pi.
+`GET /projects` → `{ id, name, description }` (tickets array may be empty). `POST /projects` is Human JWT only, accepts `{ "name", "description" }`, and returns 201 with an empty body. `POST /tickets` requires `project_id`. iOS may pick an id from the list or hardcode if only one project is on the Pi.
 
 ### Deploy
 
@@ -111,3 +122,5 @@ Approve/deny consume `is_used`. Second decision → 409 `already_decided`. Missi
 ## Out of scope for iOS
 
 GitHub, Dioxus UI, APNs, systemd, OpenCode bind (`127.0.0.1:4096`).
+
+Still later: cancel must stop OpenCode/in-flight deploy work safely; reopen may gain an explicit re-dispatch action; and humans may gain an HTTP `github_pr_url` write route.

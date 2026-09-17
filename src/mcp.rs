@@ -82,7 +82,7 @@ fn tool_defs() -> Value {
         },
         {
             "name": "lyra_set_status",
-            "description": "Set ticket status. Allowed: queued, running, awaiting_you, pr_opening, pending_review, closed, failed. Engineer role only.",
+            "description": "Set ticket status. Allowed: queued, running, awaiting_you, pr_opening, pending_review, closed, failed, open, cancelled. Engineer role only.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
